@@ -10,7 +10,7 @@ export const usage = `
 
 命令前缀jav XXXX-1234，api需要自行部署，参考https://github.com/ovnrain/javbus-api
 
-经测试2024/9/3可用
+经测试2024/9/3可用，配置代理请打开TUN模式
 
 该插件请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担
 `
