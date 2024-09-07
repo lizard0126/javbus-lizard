@@ -6,14 +6,17 @@
     "type": "git",
     "url": "git+https://github.com/lizard0126/javbus-lizard.git"
   },
-  "main": "lib/index.js",
+  "main": "src/index.js",
   "typings": "lib/index.d.ts",
   "files": [
-    "lib",
     "src/",
+    ".npmignore",
+    "tsconfig.json",
+    "readme.md",
     "dist"
   ],
   "license": "MIT",
+  "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
