@@ -29,6 +29,9 @@ export const Config = Schema.object({
   allowDownloadLink: Schema.boolean()
     .default(false)
     .description('是否返回磁力链接'),
+  allowPreviewCover: Schema.boolean()
+    .default(false)
+    .description('是否返回封面预览'),
 })
 
 export const movieDetailApi = '/api/movies/';
@@ -42,6 +45,7 @@ export function apply(ctx: Context, config: Config) {
     title?: string;
     date?: string;
     stars?: Array<{ name: string }>;
+    img?: string;
   }
   async function fetchMovieDetail(number: string): Promise<MovieDetail> {
     const movieUrl = config.apiPrefix + movieDetailApi + number;
@@ -50,8 +54,8 @@ export function apply(ctx: Context, config: Config) {
     };
 
     const movieData = await ctx.http.get(movieUrl);
-    const { title, id, gid, date, uc, stars } = movieData;
-    result = { ...result, ...{ title, id, gid, date, uc, stars } };
+    const { title, id, gid, date, uc, stars, img } = movieData;
+    result = { ...result, ...{ title, id, gid, date, uc, stars, img } };
 
     if (config.allowDownloadLink) {
       const magnetsUrl =
@@ -80,18 +84,24 @@ export function apply(ctx: Context, config: Config) {
       try {
         if (!number) return '请提供番号!'
         const result = await fetchMovieDetail(number)
-        const { title, magnets, date, stars, } = result;
+        const { title, magnets, date, stars, img } = result;
         const starsArray = stars.map(star => star.name);
         const starsname = starsArray.length > 1 ? starsArray.join(', ') : starsArray[0];
 
-        if (!config.allowDownloadLink) {
-          await session.sendQueued(`标题: ${title}\n发行日期: ${date}\n女优: ${starsname}`)
-        } else {
-          await session.sendQueued(`标题: ${title}\n发行日期: ${date}\n女优: ${starsname}\n磁力: ${magnets}`)
+        let message = `标题: ${title}\n发行日期: ${date}\n女优: ${starsname}`;
+
+        if (config.allowDownloadLink) {
+          message += `\n磁力: ${magnets}`;
         }
+
+        if (config.allowPreviewCover && img) {
+          message += `\n封面: ${segment.image(img)}`;
+        }
+
+        await session.sendQueued(message);
       } catch(err) {
         console.log(err);
-        return `发生错误!请检查指令jav后是否添加空格，番号是否用-连接;  ${err}`;
+        return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
       }
     });
 }
