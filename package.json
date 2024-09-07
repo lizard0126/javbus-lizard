@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-javbus-lizard",
   "description": "自用jav插件，修改自koishi-plugin-javbus",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lizard0126/javbus-lizard.git"
@@ -9,6 +9,7 @@
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
+    "lib",
     "src/",
     ".npmignore",
     "tsconfig.json",
@@ -16,7 +17,6 @@
     "dist"
   ],
   "license": "MIT",
-  "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
@@ -25,5 +25,8 @@
   ],
   "peerDependencies": {
     "koishi": "^4.17.11"
+  },
+  "dependencies": {
+    "schemastery": "^3.14.6"
   }
 }
