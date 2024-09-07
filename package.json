@@ -7,7 +7,7 @@
     "url": "git+https://github.com/lizard0126/javbus-lizard.git"
   },
   "main": "src/index.js",
-  "typings": "lib/index.d.ts",
+  "typings": "src/index.d.ts",
   "files": [
     "src/",
     ".npmignore",
