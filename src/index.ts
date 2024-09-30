@@ -6,19 +6,20 @@ export const name = 'javbus'
 
 export const usage = `
 
-本插件自用，用于查询番号返回磁力链接与封面预览
+自用插件，用于查询番号返回磁力链接、封面预览、内容预览截图
 
-命令前缀jav XXXX-1234，api需要自行部署，参考https://github.com/ovnrain/javbus-api
+项目整合修改自koishi-plugin-javbus和koishi-plugin-magnet-preview
 
-经测试2024/9/7可用，配置代理请打开TUN模式
+命令前缀jav XXXX-1234，api需要自行部署，参考项目https://github.com/ovnrain/javbus-api
 
-该插件请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担
+经测试2024/9/30可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担
 `
 
 export interface Config {
   apiPrefix: string;
   allowDownloadLink: boolean;
   allowPreviewCover: boolean;
+  allowPreviewMovie: boolean;
 }
 
 export const Config = Schema.object({
@@ -28,10 +29,13 @@ export const Config = Schema.object({
     .description('填写api,形如https://aaa.bbb.ccc'),
   allowDownloadLink: Schema.boolean()
     .default(false)
-    .description('是否返回磁力链接'),
+    .description('是否返回磁链'),
   allowPreviewCover: Schema.boolean()
     .default(false)
-    .description('是否返回封面预览'),
+    .description('是否返回封面'),
+  allowPreviewMovie: Schema.boolean()
+    .default(false)
+    .description('是否返回预览'),
 })
 
 export const movieDetailApi = '/api/movies/';
@@ -47,6 +51,45 @@ export function apply(ctx: Context, config: Config) {
     stars?: Array<{ name: string }>;
     img?: string;
   }
+
+  async function captureElementAsBuffer(element) { //捕获截图
+    return await element.screenshot({ omitBackground: true });
+  }
+  
+  async function getThumbFromMagnet(ctx, magnetLink) { //获取缩略图
+    const hash = magnetLink.split(':')[3].split('&')[0];
+    const url = `https://beta.magnet.pics/m/${hash}`;
+    const customUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
+    const page = await ctx.puppeteer.page(); //用pptr加载页面
+    await page.setUserAgent(customUA);
+    await page.goto(url, { waitUntil: 'networkidle0' });
+    const thumbContainer = await page.$('.thumb-container');
+    if (!thumbContainer) {
+      await page.close();
+      return Buffer.alloc(0);
+    }
+    const imageBuffer = await captureElementAsBuffer(thumbContainer);
+    await page.close();
+    return imageBuffer;
+  }
+  
+  async function handleMagnetLink(ctx, session, url) { //处理磁链
+    const magnetLinkRegex = /magnet:\?xt=urn:btih:[a-zA-Z0-9]*/gi;
+    if (!magnetLinkRegex.test(url)) {
+      return '无效的磁力链接格式！';
+    }
+  
+    const [tipMessageId] = await session.send('正在获取截图...');
+    const combinedImageBuffer = await getThumbFromMagnet(ctx, url);
+    session.bot.deleteMessage(session.channelId, tipMessageId);
+    
+    if (combinedImageBuffer.length === 0) {
+      return '无法获取链接信息或未找到截图！';
+    }
+  
+    return segment.image(combinedImageBuffer, 'image/png');
+  }  
+
   async function fetchMovieDetail(number: string): Promise<MovieDetail> {
     const movieUrl = config.apiPrefix + movieDetailApi + number;
     let result = {
@@ -65,15 +108,11 @@ export function apply(ctx: Context, config: Config) {
       const magnetsList = await ctx.http.get(magnetsUrl);
 
       if (magnetsList.length > 0) {
-        result.magnets = `磁力: ${magnetsList[0].size},${magnetsList[0].shareDate}\n${magnetsList[0].link}`;
+        result.magnets = `磁力: 
+          ${magnetsList[0].size},
+          ${magnetsList[0].shareDate}
+          \n${magnetsList[0].link}`;
 
-        if (magnetsList.length > 1) {
-          result.magnets += `\n磁力2: ${
-            magnetsList[magnetsList.length - 1].size
-          },${magnetsList[magnetsList.length - 1].shareDate}\n${
-            magnetsList[magnetsList.length - 1].link
-          }`;
-        }
       }
     }
     return result;
@@ -99,6 +138,18 @@ export function apply(ctx: Context, config: Config) {
         }
 
         await session.sendQueued(message);
+
+        if (config.allowPreviewMovie && result.magnets) {
+          const magnetLink = result.magnets.split('\n').pop();
+          const magnetImage = await handleMagnetLink(ctx, session, magnetLink);
+          
+          if (magnetImage) {
+            await session.send(magnetImage);
+          } else {
+            await session.send('无法生成磁力链接预览图。');
+          }
+        }
+
       } catch(err) {
         console.log(err);
         return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
