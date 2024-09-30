@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-javbus-lizard",
   "description": "自用jav插件,可获取封面及缩略图",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lizard0126/javbus-lizard.git"
