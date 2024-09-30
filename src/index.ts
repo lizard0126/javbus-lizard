@@ -2,7 +2,7 @@ import { Context, segment } from 'koishi'
 import Schema from 'schemastery'
 
 
-export const name = 'javbus'
+export const name = 'javbus-lizard'
 
 export const usage = `
 
