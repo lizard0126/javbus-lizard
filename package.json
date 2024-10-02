@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-javbus-lizard",
-  "description": "自用jav插件,可获取封面及缩略图",
-  "version": "1.1.1",
+  "description": "nsfw插件,可获取磁链封面及缩略图，支持关键词搜索",
+  "version": "2.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lizard0126/javbus-lizard.git"
@@ -20,8 +20,9 @@
   "keywords": [
     "chatbot",
     "koishi",
-    "plugin",
-    "javbus"
+    "av",
+    "javbus",
+    "magnet"
   ],
   "peerDependencies": {
     "koishi": "^4.17.11",
