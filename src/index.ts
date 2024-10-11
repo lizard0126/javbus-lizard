@@ -1,6 +1,6 @@
 import { Context, segment } from 'koishi'
 import Schema from 'schemastery'
-
+// npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 
 export const name = 'javbus-lizard'
 
