@@ -2,7 +2,7 @@ import { Context, segment } from 'koishi'
 import Schema from 'schemastery'
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 
-export const name = 'javbus-lizard'
+export const name = 'javbus-lizard';
 
 export const usage = `
 
@@ -56,7 +56,7 @@ export const Config = Schema.object({
   allowPreviewMovie: Schema.boolean()
     .default(false)
     .description('是否返回预览'),
-})
+});
 
 export const movieDetailApi = '/api/movies/';
 export const magnetDetailApi = '/api/magnets/';
@@ -74,48 +74,25 @@ export function apply(ctx: Context, config: Config) {
     img?: string;
   }
 
-  async function captureElementAsBuffer(element) {
-    return await element.screenshot({ omitBackground: true });
+  async function getScreenshotsFromApi(magnetLink) {
+    const apiUrl = `https://whatslink.info/api/v1/link?url=${encodeURIComponent(magnetLink)}`;
+    try {
+      const response = await ctx.http.get(apiUrl);
+      if (response.screenshots && response.screenshots.length > 0) {
+        return response.screenshots.map(screenshotData => screenshotData.screenshot);
+      } else {
+        return [];
+      }
+    } catch (err) {
+      console.error('获取截图失败:', err);
+      return [];
+    }
   }
-  
-  async function getThumbFromMagnet(ctx, magnetLink) { 
-    const hash = magnetLink.split(':')[3].split('&')[0];
-    const url = `https://beta.magnet.pics/m/${hash}`;
-    const customUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
-    const page = await ctx.puppeteer.page(); 
-    await page.setUserAgent(customUA);
-    await page.goto(url, { waitUntil: 'networkidle0' });
-    const thumbContainer = await page.$('.thumb-container');
-    if (!thumbContainer) {
-      await page.close();
-      return Buffer.alloc(0);
-    }
-    const imageBuffer = await captureElementAsBuffer(thumbContainer);
-    await page.close();
-    return imageBuffer;
-  }
-  
-  async function handleMagnetLink(ctx, session, url) { 
-    const magnetLinkRegex = /magnet:\?xt=urn:btih:[a-zA-Z0-9]*/gi;
-    if (!magnetLinkRegex.test(url)) {
-      return '无效的磁力链接格式！';
-    }
-  
-    const [tipMessageId] = await session.send('正在获取截图...');
-    const combinedImageBuffer = await getThumbFromMagnet(ctx, url);
-    session.bot.deleteMessage(session.channelId, tipMessageId);
-    
-    if (combinedImageBuffer.length === 0) {
-      return '无法获取链接信息或未找到截图！';
-    }
-  
-    return segment.image(combinedImageBuffer, 'image/png');
-  }  
 
   async function fetchMovieDetail(number: string): Promise<MovieDetail> {
     const movieUrl = config.apiPrefix + movieDetailApi + number;
     let result = {
-      magnets: "",
+      magnets: '',
     };
 
     const movieData = await ctx.http.get(movieUrl);
@@ -123,24 +100,21 @@ export function apply(ctx: Context, config: Config) {
     result = { ...result, ...{ title, id, gid, date, uc, stars, img } };
 
     if (config.allowDownloadLink) {
-      const magnetsUrl =
-        config.apiPrefix + magnetDetailApi + `${id}?gid=${gid}&uc=${uc}`;
-      console.log("Fetching details from:", magnetsUrl);
-
+      const magnetsUrl = config.apiPrefix + magnetDetailApi + `${id}?gid=${gid}&uc=${uc}`;
       const magnetsList = await ctx.http.get(magnetsUrl);
-
       if (magnetsList.length > 0) {
         result.magnets = `大小：${magnetsList[0].size}\n${magnetsList[0].link}`;
       }
     }
+
     return result;
   }
 
   ctx.command('jav <number:text>', '查找javbus番号')
-    .action(async ({session}, number) => {
+    .action(async ({ session }, number) => {
       try {
-        if (!number) return '请提供番号!'
-        const result = await fetchMovieDetail(number)
+        if (!number) return '请提供番号!';
+        const result = await fetchMovieDetail(number);
         const { title, magnets, date, stars, img } = result;
         const starsArray = stars.map(star => star.name);
         const starsname = starsArray.length > 1 ? starsArray.join(', ') : starsArray[0];
@@ -159,16 +133,17 @@ export function apply(ctx: Context, config: Config) {
 
         if (config.allowPreviewMovie && result.magnets) {
           const magnetLink = result.magnets.split('\n').pop();
-          const magnetImage = await handleMagnetLink(ctx, session, magnetLink);
-          
-          if (magnetImage) {
-            await session.send(magnetImage);
+          const screenshots = await getScreenshotsFromApi(magnetLink);
+          if (screenshots && screenshots.length > 0) {
+            for (const screenshot of screenshots) {
+              await session.send(segment.image(screenshot));
+            }
           } else {
-            await session.send('无法生成磁力链接预览图。');
+            await session.send('无法获取预览截图。');
           }
         }
 
-      } catch(err) {
+      } catch (err) {
         console.log(err);
         return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
       }
@@ -182,24 +157,19 @@ export function apply(ctx: Context, config: Config) {
     const searchData = await ctx.http.get(searchUrl);
 
     if (!searchData || !Array.isArray(searchData.movies) || searchData.movies.length === 0) {
-    return '未找到任何匹配的电影！';
+      return '未找到任何匹配的电影！';
     }
 
     const limitedMovies = searchData.movies.slice(0, 5);
 
     result = limitedMovies.map((movie) => {
       const { title, id, img, date } = movie;
-
       let message = `标题: ${title}\n发行日期: ${date}\n番号: ${id}`;
-
       if (config.allowPreviewCover) {
         message += `\n封面: ${segment.image(img)}`;
       }
       return message;
-      
-    });
-
-    return result.join('\n\n');
+    }).join('\n\n');
   }
 
   ctx.command('jkw <keyword:text>', '通过关键词搜索')
@@ -208,8 +178,7 @@ export function apply(ctx: Context, config: Config) {
         if (!keyword) return '请提供关键词!';
         const result = await fetchMoviesByKeyword(keyword);
         return result;
-      
-      } catch(err) {
+      } catch (err) {
         console.log(err);
         return `发生错误!请检查网络连接、指令jkw后是否添加空格;  ${err}`;
       }
