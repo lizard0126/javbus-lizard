@@ -1,7 +1,7 @@
 import { Context, segment } from 'koishi'
 import Schema from 'schemastery'
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
-
+// yarn build --workspace koishi-plugin-javbus-lizard
 export const name = 'javbus-lizard';
 
 export const usage = `
@@ -11,7 +11,7 @@ export const usage = `
 
 项目整合修改自javbus和magnet-preview，api需要自行部署，参考项目[javbus-api](https://github.com/ovnrain/javbus-api)
 
-经测试2024/10/11可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担
+经测试2024/10/12可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
 
 ## 主要功能及示例调用：
 - 番号搜索  示例指令：jav SSIS-834
@@ -24,9 +24,9 @@ export const usage = `
   - 获取最新上传的最多五部影片。
 
 ## 改进：
-- 新增了最新上传的影片列表获取，分为有码和无码
+- 通过直接调用 API 获取截图，减少了对 Puppeteer 的依赖。
 
-- 完善了番号搜索的返回，将封面与影片信息分开发送
+- 更加轻量化，减少了系统资源的消耗和复杂性。
 
 ## todo：
 - 搜索女优信息
@@ -133,7 +133,9 @@ export function apply(ctx: Context, config: Config) {
 
         if (config.allowPreviewMovie && result.magnets) {
           const magnetLink = result.magnets.split('\n').pop();
+          const [tipMessageId] = await session.send('正在获取截图...');
           const screenshots = await getScreenshotsFromApi(magnetLink);
+          
           if (screenshots && screenshots.length > 0) {
             for (const screenshot of screenshots) {
               await session.send(segment.image(screenshot));
@@ -141,6 +143,7 @@ export function apply(ctx: Context, config: Config) {
           } else {
             await session.send('无法获取预览截图。');
           }
+          session.bot.deleteMessage(session.channelId, tipMessageId);
         }
 
       } catch (err) {
