@@ -1,4 +1,4 @@
-import { Context, segment } from 'koishi'
+import {Context, segment} from 'koishi'
 import Schema from 'schemastery'
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 // yarn build --workspace koishi-plugin-javbus-lizard
@@ -40,6 +40,7 @@ export interface Config {
   allowDownloadLink: boolean;
   allowPreviewCover: boolean;
   allowPreviewMovie: boolean;
+  foldMessage: boolean;
 }
 
 export const Config = Schema.object({
@@ -56,6 +57,9 @@ export const Config = Schema.object({
   allowPreviewMovie: Schema.boolean()
     .default(false)
     .description('是否返回预览'),
+  foldMessage: Schema.boolean()
+    .default(false)
+    .description('是否折叠消息'),
 });
 
 export const movieDetailApi = '/api/movies/';
@@ -96,8 +100,8 @@ export function apply(ctx: Context, config: Config) {
     };
 
     const movieData = await ctx.http.get(movieUrl);
-    const { title, id, gid, date, uc, stars, img } = movieData;
-    result = { ...result, ...{ title, id, gid, date, uc, stars, img } };
+    const {title, id, gid, date, uc, stars, img} = movieData;
+    result = {...result, ...{title, id, gid, date, uc, stars, img}};
 
     if (config.allowDownloadLink) {
       const magnetsUrl = config.apiPrefix + magnetDetailApi + `${id}?gid=${gid}&uc=${uc}`;
@@ -111,11 +115,11 @@ export function apply(ctx: Context, config: Config) {
   }
 
   ctx.command('jav <number:text>', '查找javbus番号')
-    .action(async ({ session }, number) => {
+    .action(async ({session}, number) => {
       try {
         if (!number) return '请提供番号!';
         const result = await fetchMovieDetail(number);
-        const { title, magnets, date, stars, img } = result;
+        const {title, magnets, date, stars, img} = result;
         const starsArray = stars.map(star => star.name);
         const starsname = starsArray.length > 1 ? starsArray.join(', ') : starsArray[0];
 
@@ -124,28 +128,53 @@ export function apply(ctx: Context, config: Config) {
         if (config.allowDownloadLink) {
           message += `\n磁力: ${magnets}`;
         }
-
-        await session.sendQueued(message);
-
-        if (config.allowPreviewCover && img) {
-          await session.sendQueued(segment.image(img));
-        }
-
-        if (config.allowPreviewMovie && result.magnets) {
-          const magnetLink = result.magnets.split('\n').pop();
-          const [tipMessageId] = await session.send('正在获取截图...');
-          const screenshots = await getScreenshotsFromApi(magnetLink);
-          
-          if (screenshots && screenshots.length > 0) {
-            for (const screenshot of screenshots) {
-              await session.send(segment.image(screenshot));
-            }
-          } else {
-            await session.send('无法获取预览截图。');
+        if (config.foldMessage) {
+          const figureResult = segment('figure')
+          const userMetaInfo = {
+            userId: session.userId,
+            nickname: session.username,
           }
-          session.bot.deleteMessage(session.channelId, tipMessageId);
-        }
+          figureResult.children.push(
+            segment('message', userMetaInfo, message))
+          if (config.allowPreviewCover && img) {
+            figureResult.children.push(
+              segment('message', userMetaInfo, segment.image(img)))
+          }
+          if (config.allowPreviewMovie && result.magnets) {
+            const magnetLink = result.magnets.split('\n').pop();
+            const [tipMessageId] = await session.send('正在获取截图...');
+            const screenshots = await getScreenshotsFromApi(magnetLink);
+            if (screenshots && screenshots.length > 0) {
+              for (const screenshot of screenshots) {
+                figureResult.children.push(
+                  segment('message', userMetaInfo, segment.image(screenshot)))
+              }
+            } else {
+              await session.send('无法获取预览截图。');
+            }
+            session.bot.deleteMessage(session.channelId, tipMessageId);
+          }
+          return figureResult;
+        } else {
+          await session.sendQueued(message);
+          if (config.allowPreviewCover && img) {
+            await session.sendQueued(segment.image(img));
+          }
+          if (config.allowPreviewMovie && result.magnets) {
+            const magnetLink = result.magnets.split('\n').pop();
+            const [tipMessageId] = await session.send('正在获取截图...');
+            const screenshots = await getScreenshotsFromApi(magnetLink);
 
+            if (screenshots && screenshots.length > 0) {
+              for (const screenshot of screenshots) {
+                await session.send(segment.image(screenshot));
+              }
+            } else {
+              await session.send('无法获取预览截图。');
+            }
+            session.bot.deleteMessage(session.channelId, tipMessageId);
+          }
+        }
       } catch (err) {
         console.log(err);
         return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
@@ -153,7 +182,7 @@ export function apply(ctx: Context, config: Config) {
     });
 
   //根据关键词搜索av
-  async function fetchMoviesByKeyword(keyword: string) { 
+  async function fetchMoviesByKeyword(keyword: string) {
     const searchUrl = config.apiPrefix + searchMovieApi + encodeURIComponent(keyword);
     let result = [];
 
@@ -166,7 +195,7 @@ export function apply(ctx: Context, config: Config) {
     const limitedMovies = searchData.movies.slice(0, 5);
 
     result = limitedMovies.map((movie) => {
-      const { title, id, img, date } = movie;
+      const {title, id, img, date} = movie;
       let message = `标题: ${title}\n发行日期: ${date}\n番号: ${id}`;
       if (config.allowPreviewCover) {
         message += `\n封面: ${segment.image(img)}`;
@@ -176,7 +205,7 @@ export function apply(ctx: Context, config: Config) {
   }
 
   ctx.command('jkw <keyword:text>', '通过关键词搜索')
-    .action(async ({ session }, keyword) => {
+    .action(async ({session}, keyword) => {
       try {
         if (!keyword) return '请提供关键词!';
         const result = await fetchMoviesByKeyword(keyword);
@@ -188,76 +217,76 @@ export function apply(ctx: Context, config: Config) {
     });
 
   // 获取最新有码av列表
-async function fetchMovies() {
-  const latestMoviesUrl = config.apiPrefix + movieDetailApi;
-  const movieList = await ctx.http.get(latestMoviesUrl);
-  let result = [];
+  async function fetchMovies() {
+    const latestMoviesUrl = config.apiPrefix + movieDetailApi;
+    const movieList = await ctx.http.get(latestMoviesUrl);
+    let result = [];
 
-  if (!movieList || !Array.isArray(movieList.movies) || movieList.movies.length === 0) {
-    return '未找到任何影片！';
+    if (!movieList || !Array.isArray(movieList.movies) || movieList.movies.length === 0) {
+      return '未找到任何影片！';
+    }
+
+    const limitedMovies = movieList.movies.slice(0, 5);
+
+    result = limitedMovies.map((movie) => {
+      const {title, id, img, date, tags} = movie;
+
+      let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}\n标签: ${tags.join(', ')}`;
+
+      if (config.allowPreviewCover) {
+        message += `\n封面: ${segment.image(img)}`;
+      }
+      return message;
+    });
+
+    return result.join('\n\n');
   }
 
-  const limitedMovies = movieList.movies.slice(0, 5);
-
-  result = limitedMovies.map((movie) => {
-    const { title, id, img, date, tags } = movie;
-
-    let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}\n标签: ${tags.join(', ')}`;
-
-    if (config.allowPreviewCover) {
-      message += `\n封面: ${segment.image(img)}`;
-    }
-    return message;
-  });
-
-  return result.join('\n\n');
-}
-
-ctx.command('jew', '获取最新的影片')
-  .action(async ({ session }) => {
-    try {
-      const result = await fetchMovies();
-      return result;
-    } catch (err) {
-      console.log(err);
-      return `获取影片失败！请检查网络连接: ${err}`;
-    }
-  });
+  ctx.command('jew', '获取最新的影片')
+    .action(async ({session}) => {
+      try {
+        const result = await fetchMovies();
+        return result;
+      } catch (err) {
+        console.log(err);
+        return `获取影片失败！请检查网络连接: ${err}`;
+      }
+    });
 
   // 获取最新无码av列表
-async function fetchUncensoredMovies() {
-  const uncensoredMoviesUrl = config.apiPrefix + uncensoredMovieApi;
-  const uncensored = await ctx.http.get(uncensoredMoviesUrl);
-  let result = [];
+  async function fetchUncensoredMovies() {
+    const uncensoredMoviesUrl = config.apiPrefix + uncensoredMovieApi;
+    const uncensored = await ctx.http.get(uncensoredMoviesUrl);
+    let result = [];
 
-  if (!uncensored || !Array.isArray(uncensored.movies) || uncensored.movies.length === 0) {
-    return '未找到任何影片！';
+    if (!uncensored || !Array.isArray(uncensored.movies) || uncensored.movies.length === 0) {
+      return '未找到任何影片！';
+    }
+
+    const limitedMovies = uncensored.movies.slice(0, 5);
+
+    result = limitedMovies.map((movie) => {
+      const {title, id, img, date} = movie;
+
+      let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}`;
+
+      if (config.allowPreviewCover) {
+        message += `\n封面: ${segment.image(img)}`;
+      }
+      return message;
+    });
+
+    return result.join('\n\n');
   }
 
-  const limitedMovies = uncensored.movies.slice(0, 5);
-
-  result = limitedMovies.map((movie) => {
-    const { title, id, img, date } = movie;
-
-    let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}`;
-
-    if (config.allowPreviewCover) {
-      message += `\n封面: ${segment.image(img)}`;
-    }
-    return message;
-  });
-
-  return result.join('\n\n');
-}
-
-ctx.command('jew无码', '获取最新的无码影片')
-  .action(async ({ session }) => {
-    try {
-      const result = await fetchUncensoredMovies();
-      return result;
-    } catch (err) {
-      console.log(err);
-      return `获取影片失败！请检查网络连接: ${err}`;
-    }
-  });
+  ctx.command('jew无码', '获取最新的无码影片')
+    .action(async ({session}) => {
+      try {
+        const result = await fetchUncensoredMovies();
+        return result;
+      } catch (err) {
+        console.log(err);
+        return `获取影片失败！请检查网络连接: ${err}`;
+      }
+    });
 }
