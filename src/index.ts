@@ -1,5 +1,6 @@
 import { Context, segment } from 'koishi'
 import Schema from 'schemastery'
+import { jsx, jsxs } from '@satorijs/element/jsx-runtime';
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 // yarn build --workspace koishi-plugin-javbus-lizard
 export const name = 'javbus-lizard';
@@ -24,12 +25,14 @@ export const usage = `
   - 获取最新上传的最多五部影片。
 
 ## 改进：
-- 通过直接调用 API 获取截图，减少了对 Puppeteer 的依赖。
+- 将预览图发送改为合并转发，解决部分群无法发送的问题
 
-- 更加轻量化，减少了系统资源的消耗和复杂性。
+- 修复jkw指令返回问题
 
 ## todo：
 - 搜索女优信息
+
+- 优化指令及代码
 
 - ……
 
@@ -74,6 +77,7 @@ export function apply(ctx: Context, config: Config) {
     img?: string;
   }
 
+  //通过番号查找av信息
   async function getScreenshotsFromApi(magnetLink) {
     const apiUrl = `https://whatslink.info/api/v1/link?url=${encodeURIComponent(magnetLink)}`;
     try {
@@ -92,7 +96,7 @@ export function apply(ctx: Context, config: Config) {
   async function fetchMovieDetail(number: string): Promise<MovieDetail> {
     const movieUrl = config.apiPrefix + movieDetailApi + number;
     let result = {
-      magnets: '',
+      magnets: "",
     };
 
     const movieData = await ctx.http.get(movieUrl);
@@ -137,9 +141,20 @@ export function apply(ctx: Context, config: Config) {
           const screenshots = await getScreenshotsFromApi(magnetLink);
           
           if (screenshots && screenshots.length > 0) {
-            for (const screenshot of screenshots) {
-              await session.send(segment.image(screenshot));
-            }
+            const forwardMessage = jsx("message", {
+              forward: true,
+              children: screenshots.map(screenshot => 
+                jsxs("message", {
+                  children: [
+                    jsx("author", { "user-id": session.selfId }), // 当前机器人为发送者
+                    jsx("image", { src: screenshot })  // 包含截图的图片消息
+                  ]
+                })
+              )
+            });
+          
+            // 发送合并转发消息
+            await session.send(forwardMessage);
           } else {
             await session.send('无法获取预览截图。');
           }
@@ -173,6 +188,7 @@ export function apply(ctx: Context, config: Config) {
       }
       return message;
     }).join('\n\n');
+    return result;
   }
 
   ctx.command('jkw <keyword:text>', '通过关键词搜索')
@@ -180,6 +196,7 @@ export function apply(ctx: Context, config: Config) {
       try {
         if (!keyword) return '请提供关键词!';
         const result = await fetchMoviesByKeyword(keyword);
+        if (!result) return '未找到任何匹配的电影！';
         return result;
       } catch (err) {
         console.log(err);
@@ -188,76 +205,75 @@ export function apply(ctx: Context, config: Config) {
     });
 
   // 获取最新有码av列表
-async function fetchMovies() {
-  const latestMoviesUrl = config.apiPrefix + movieDetailApi;
-  const movieList = await ctx.http.get(latestMoviesUrl);
-  let result = [];
+  async function fetchMovies() {
+    const latestMoviesUrl = config.apiPrefix + movieDetailApi;
+    const movieList = await ctx.http.get(latestMoviesUrl);
+    let result = [];
 
-  if (!movieList || !Array.isArray(movieList.movies) || movieList.movies.length === 0) {
-    return '未找到任何影片！';
+    if (!movieList || !Array.isArray(movieList.movies) || movieList.movies.length === 0) {
+      return '未找到任何影片！';
+    }
+
+    const limitedMovies = movieList.movies.slice(0, 5);
+
+    result = limitedMovies.map((movie) => {
+      const { title, id, img, date, tags } = movie;
+
+      let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}\n标签: ${tags.join(', ')}`;
+
+      if (config.allowPreviewCover) {
+        message += `\n封面: ${segment.image(img)}`;
+      }
+      return message;
+    });
+    return result.join('\n\n');
   }
 
-  const limitedMovies = movieList.movies.slice(0, 5);
+  ctx.command('jew', '获取最新的影片')
+    .action(async ({ session }) => {
+      try {
+        const result = await fetchMovies();
+        return result;
+      } catch (err) {
+        console.log(err);
+        return `获取影片失败！请检查网络连接: ${err}`;
+      }
+    });
 
-  result = limitedMovies.map((movie) => {
-    const { title, id, img, date, tags } = movie;
+    // 获取最新无码av列表
+  async function fetchUncensoredMovies() {
+    const uncensoredMoviesUrl = config.apiPrefix + uncensoredMovieApi;
+    const uncensored = await ctx.http.get(uncensoredMoviesUrl);
+    let result = [];
 
-    let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}\n标签: ${tags.join(', ')}`;
-
-    if (config.allowPreviewCover) {
-      message += `\n封面: ${segment.image(img)}`;
+    if (!uncensored || !Array.isArray(uncensored.movies) || uncensored.movies.length === 0) {
+      return '未找到任何影片！';
     }
-    return message;
-  });
 
-  return result.join('\n\n');
-}
+    const limitedMovies = uncensored.movies.slice(0, 5);
 
-ctx.command('jew', '获取最新的影片')
-  .action(async ({ session }) => {
-    try {
-      const result = await fetchMovies();
-      return result;
-    } catch (err) {
-      console.log(err);
-      return `获取影片失败！请检查网络连接: ${err}`;
-    }
-  });
+    result = limitedMovies.map((movie) => {
+      const { title, id, img, date } = movie;
 
-  // 获取最新无码av列表
-async function fetchUncensoredMovies() {
-  const uncensoredMoviesUrl = config.apiPrefix + uncensoredMovieApi;
-  const uncensored = await ctx.http.get(uncensoredMoviesUrl);
-  let result = [];
+      let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}`;
 
-  if (!uncensored || !Array.isArray(uncensored.movies) || uncensored.movies.length === 0) {
-    return '未找到任何影片！';
+      if (config.allowPreviewCover) {
+        message += `\n封面: ${segment.image(img)}`;
+      }
+      return message;
+    });
+
+    return result.join('\n\n');
   }
 
-  const limitedMovies = uncensored.movies.slice(0, 5);
-
-  result = limitedMovies.map((movie) => {
-    const { title, id, img, date } = movie;
-
-    let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}`;
-
-    if (config.allowPreviewCover) {
-      message += `\n封面: ${segment.image(img)}`;
-    }
-    return message;
-  });
-
-  return result.join('\n\n');
-}
-
-ctx.command('jew无码', '获取最新的无码影片')
-  .action(async ({ session }) => {
-    try {
-      const result = await fetchUncensoredMovies();
-      return result;
-    } catch (err) {
-      console.log(err);
-      return `获取影片失败！请检查网络连接: ${err}`;
-    }
-  });
+  ctx.command('jew无码', '获取最新的无码影片')
+    .action(async ({ session }) => {
+      try {
+        const result = await fetchUncensoredMovies();
+        return result;
+      } catch (err) {
+        console.log(err);
+        return `获取影片失败！请检查网络连接: ${err}`;
+      }
+    });
 }
