@@ -1,6 +1,5 @@
-import { Context, segment } from 'koishi'
+import { Context, segment, h } from 'koishi'
 import Schema from 'schemastery'
-import { jsx, jsxs } from '@satorijs/element/jsx-runtime';
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 // yarn build --workspace koishi-plugin-javbus-lizard
 export const name = 'javbus-lizard';
@@ -88,7 +87,7 @@ export function apply(ctx: Context, config: Config) {
         return [];
       }
     } catch (err) {
-      console.error('获取截图失败:', err);
+      ctx.logger.error('获取截图失败:', err);
       return [];
     }
   }
@@ -114,6 +113,34 @@ export function apply(ctx: Context, config: Config) {
     return result;
   }
 
+  async function sendForwardedMessages(session, screenshots, userId) {
+    const bot = await session.bot;
+    const UserInfo = await bot.getUser(userId);
+    const nickname: string = UserInfo.username;
+
+    const forwardMessages = screenshots.map((screenshot, index) => {
+      ctx.logger.info(`正在准备合并转发的截图消息: ${index + 1} / ${screenshots.length}`);
+      const attrs = {
+        userId: userId,
+        nickname: nickname,
+      };
+      return h('message', attrs, segment.image(screenshot)); // 确保内容是图片段
+    });
+
+    ctx.logger.info(`准备发送合并转发消息，截图数量: ${screenshots.length}`);
+
+    // 使用 forward 属性创建合并转发消息
+    const forwardMessage = h('message', { forward: true, children: forwardMessages });
+
+    // 发送合并转发消息
+    try {
+      await session.send(forwardMessage);
+      ctx.logger.info(`合并转发消息发送成功`);
+    } catch (error) {
+      ctx.logger.error(`合并转发消息发送失败: ${error}`);
+    }
+  }
+  
   ctx.command('jav <number:text>', '查找javbus番号')
     .action(async ({ session }, number) => {
       try {
@@ -133,39 +160,33 @@ export function apply(ctx: Context, config: Config) {
 
         if (config.allowPreviewCover && img) {
           await session.sendQueued(segment.image(img));
+          ctx.logger.info('已发送封面图片');
         }
-
+  
         if (config.allowPreviewMovie && result.magnets) {
           const magnetLink = result.magnets.split('\n').pop();
+          ctx.logger.info(`获取预览截图，磁力链接: ${magnetLink}`);
           const [tipMessageId] = await session.send('正在获取截图...');
           const screenshots = await getScreenshotsFromApi(magnetLink);
-          
+
           if (screenshots && screenshots.length > 0) {
-            const forwardMessage = jsx("message", {
-              forward: true,
-              children: screenshots.map(screenshot => 
-                jsxs("message", {
-                  children: [
-                    jsx("author", { "user-id": session.selfId }), // 当前机器人为发送者
-                    jsx("image", { src: screenshot })  // 包含截图的图片消息
-                  ]
-                })
-              )
-            });
-          
-            // 发送合并转发消息
-            await session.send(forwardMessage);
+            ctx.logger.info(`成功获取到 ${screenshots.length} 张截图`);
+            await sendForwardedMessages(session, screenshots, session.userId);
           } else {
             await session.send('无法获取预览截图。');
+            ctx.logger.warn('获取预览截图失败或截图为空');
           }
-          session.bot.deleteMessage(session.channelId, tipMessageId);
+          
+          await session.bot.deleteMessage(session.channelId, tipMessageId);
+          ctx.logger.info('删除“正在获取截图”提示消息');
         }
-
       } catch (err) {
-        console.log(err);
+        ctx.logger.error(`发生错误: ${err}`);
         return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
       }
     });
+  
+  
 
   //根据关键词搜索av
   async function fetchMoviesByKeyword(keyword: string) { 
