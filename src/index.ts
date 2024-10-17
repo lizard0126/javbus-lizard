@@ -20,20 +20,20 @@ export const usage = `
 - 关键词搜索  示例指令：jkw 三上
   - 通过关键词搜索与关键词相关的最多五部影片。
 
-- 最新影片  示例指令：jew/jew无码
-  - 获取最新上传的最多五部影片。
+- 最新影片  示例指令：jew
+  - 可选参数：无码
 
-## 改进：
-- 将预览图发送改为合并转发，解决部分群无法发送的问题
+  - 获取最新上传的最多五部影片。若添加参数无码，则返回最新上传的最多五部无码影片。
 
-- 修复jkw指令返回问题
+## 本次更新：
+- 优化代码结构，精简代码数量，将部分重复功能整合
 
 ## todo：
 - 搜索女优信息
-
-- 优化指令及代码
-
+- 因为上一条需要维护爬虫所以近期更新的可能性不大（）
 - ……
+
+## 若有更好的意见或建议，请[点此提issue](https://github.com/lizard0126/javbus-lizard/issues)或[加企鹅群](https://qm.qq.com/q/rqYGZYGKis)讨论。
 
 `
 
@@ -185,8 +185,6 @@ export function apply(ctx: Context, config: Config) {
         return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
       }
     });
-  
-  
 
   //根据关键词搜索av
   async function fetchMoviesByKeyword(keyword: string) { 
@@ -225,7 +223,7 @@ export function apply(ctx: Context, config: Config) {
       }
     });
 
-  // 获取最新有码av列表
+  // 获取最新av列表
   async function fetchMovies() {
     const latestMoviesUrl = config.apiPrefix + movieDetailApi;
     const movieList = await ctx.http.get(latestMoviesUrl);
@@ -250,18 +248,6 @@ export function apply(ctx: Context, config: Config) {
     return result.join('\n\n');
   }
 
-  ctx.command('jew', '获取最新的影片')
-    .action(async ({ session }) => {
-      try {
-        const result = await fetchMovies();
-        return result;
-      } catch (err) {
-        console.log(err);
-        return `获取影片失败！请检查网络连接: ${err}`;
-      }
-    });
-
-    // 获取最新无码av列表
   async function fetchUncensoredMovies() {
     const uncensoredMoviesUrl = config.apiPrefix + uncensoredMovieApi;
     const uncensored = await ctx.http.get(uncensoredMoviesUrl);
@@ -286,11 +272,15 @@ export function apply(ctx: Context, config: Config) {
 
     return result.join('\n\n');
   }
-
-  ctx.command('jew无码', '获取最新的无码影片')
-    .action(async ({ session }) => {
+  ctx.command('jew <mode:text>', '获取最新的影片，输入“jew+空格+无码”获取最新无码影片')
+    .action(async ({ session }, mode) => {
+      let result;
       try {
-        const result = await fetchUncensoredMovies();
+        if (mode && mode.includes('无码')) {
+          result = await fetchUncensoredMovies();
+        } else {
+          result = await fetchMovies();
+        }
         return result;
       } catch (err) {
         console.log(err);
