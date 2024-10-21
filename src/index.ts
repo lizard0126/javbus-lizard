@@ -1,7 +1,6 @@
-import { Context, segment, h } from 'koishi'
-import Schema from 'schemastery'
+import { Context, segment, h } from 'koishi';
+import Schema from 'schemastery';
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
-// yarn build --workspace koishi-plugin-javbus-lizard
 export const name = 'javbus-lizard';
 
 export const usage = `
@@ -20,22 +19,26 @@ export const usage = `
 - 关键词搜索  示例指令：jkw 三上
   - 通过关键词搜索与关键词相关的最多五部影片。
 
-- 最新影片  示例指令：jew
-  - 可选参数：无码
+- 最新今日影片  示例指令：jew
+  - 可选参数：无码（指令为jew+空格+无码）
 
-  - 获取最新上传的最多五部影片。若添加参数无码，则返回最新上传的最多五部无码影片。
+  - 获取今日上传影片，若今日无新片则获取昨日上传的影片。都没有则获取目前最新的5部
+
+  - 若添加参数无码，则返回最新上传的最多五部无码影片。
 
 ## 本次更新：
-- 优化代码结构，精简代码数量，将部分重复功能整合
+- 优化封面图获取方式，给所有请求添加了referer，获取封面更稳定了
+
+- 修改了jew指令获取影片的方式，取消了有码影片的数量限制
 
 ## todo：
 - 搜索女优信息
-- 因为上一条需要维护爬虫所以近期更新的可能性不大（）
+- 优化代码
 - ……
 
 ## 若有更好的意见或建议，请[点此提issue](https://github.com/lizard0126/javbus-lizard/issues)或[加企鹅群](https://qm.qq.com/q/rqYGZYGKis)讨论。
 
-`
+`;
 
 export interface Config {
   apiPrefix: string;
@@ -94,14 +97,19 @@ export function apply(ctx: Context, config: Config) {
 
   async function fetchMovieDetail(number: string): Promise<MovieDetail> {
     const movieUrl = config.apiPrefix + movieDetailApi + number;
-    let result = {
+  
+    let result: MovieDetail = {
       magnets: "",
+      title: "",
+      date: "",
+      stars: [],
+      img: "",
     };
-
+  
     const movieData = await ctx.http.get(movieUrl);
     const { title, id, gid, date, uc, stars, img } = movieData;
     result = { ...result, ...{ title, id, gid, date, uc, stars, img } };
-
+  
     if (config.allowDownloadLink) {
       const magnetsUrl = config.apiPrefix + magnetDetailApi + `${id}?gid=${gid}&uc=${uc}`;
       const magnetsList = await ctx.http.get(magnetsUrl);
@@ -109,7 +117,17 @@ export function apply(ctx: Context, config: Config) {
         result.magnets = `大小：${magnetsList[0].size}\n${magnetsList[0].link}`;
       }
     }
-
+  
+    if (config.allowPreviewCover && img) {
+      const refererUrl = `https://www.javbus.com/${id}`;
+      const imageResponse = await ctx.http.get(img, {
+        headers: {
+          referer: refererUrl,
+        },
+      });
+      result.img = imageResponse;
+    }
+  
     return result;
   }
 
@@ -119,20 +137,15 @@ export function apply(ctx: Context, config: Config) {
     const nickname: string = UserInfo.username;
 
     const forwardMessages = screenshots.map((screenshot, index) => {
-      ctx.logger.info(`正在准备合并转发的截图消息: ${index + 1} / ${screenshots.length}`);
       const attrs = {
         userId: userId,
         nickname: nickname,
       };
-      return h('message', attrs, segment.image(screenshot)); // 确保内容是图片段
+      return h('message', attrs, segment.image(screenshot));
     });
 
-    ctx.logger.info(`准备发送合并转发消息，截图数量: ${screenshots.length}`);
-
-    // 使用 forward 属性创建合并转发消息
     const forwardMessage = h('message', { forward: true, children: forwardMessages });
 
-    // 发送合并转发消息
     try {
       await session.send(forwardMessage);
       ctx.logger.info(`合并转发消息发送成功`);
@@ -165,7 +178,6 @@ export function apply(ctx: Context, config: Config) {
   
         if (config.allowPreviewMovie && result.magnets) {
           const magnetLink = result.magnets.split('\n').pop();
-          ctx.logger.info(`获取预览截图，磁力链接: ${magnetLink}`);
           const [tipMessageId] = await session.send('正在获取截图...');
           const screenshots = await getScreenshotsFromApi(magnetLink);
 
@@ -178,7 +190,6 @@ export function apply(ctx: Context, config: Config) {
           }
           
           await session.bot.deleteMessage(session.channelId, tipMessageId);
-          ctx.logger.info('删除“正在获取截图”提示消息');
         }
       } catch (err) {
         ctx.logger.error(`发生错误: ${err}`);
@@ -199,92 +210,170 @@ export function apply(ctx: Context, config: Config) {
 
     const limitedMovies = searchData.movies.slice(0, 5);
 
-    result = limitedMovies.map((movie) => {
+    result = limitedMovies.map(async (movie) => {
       const { title, id, img, date } = movie;
       let message = `标题: ${title}\n发行日期: ${date}\n番号: ${id}`;
-      if (config.allowPreviewCover) {
-        message += `\n封面: ${segment.image(img)}`;
+
+      if (config.allowPreviewCover && img) {
+        const refererUrl = `https://www.javbus.com/${id}`;
+        const imageResponse = await ctx.http.get(img, {
+          headers: {
+            referer: refererUrl,
+          },
+        });
+        message += `\n封面: ${segment.image(imageResponse)}`;
       }
+
       return message;
-    }).join('\n\n');
-    return result;
+    });
+
+    return (await Promise.all(result)).join('\n\n');
   }
 
   ctx.command('jkw <keyword:text>', '通过关键词搜索')
-    .action(async ({ session }, keyword) => {
+    .action(async ({  }, keyword) => {
       try {
-        if (!keyword) return '请提供关键词!';
-        const result = await fetchMoviesByKeyword(keyword);
-        if (!result) return '未找到任何匹配的电影！';
-        return result;
+        if (!keyword) return '请输入关键词';
+        const message = await fetchMoviesByKeyword(keyword);
+        return message;
       } catch (err) {
-        console.log(err);
-        return `发生错误!请检查网络连接、指令jkw后是否添加空格;  ${err}`;
+        ctx.logger.error(`发生错误: ${err}`);
+        return `发生错误!请检查网络连接、关键词是否正确。${err}`;
       }
     });
 
-  // 获取最新av列表
-  async function fetchMovies() {
+  // 获取最新av
+  async function fetchMoviesByTags(session) {
     const latestMoviesUrl = config.apiPrefix + movieDetailApi;
     const movieList = await ctx.http.get(latestMoviesUrl);
-    let result = [];
-
+  
     if (!movieList || !Array.isArray(movieList.movies) || movieList.movies.length === 0) {
-      return '未找到任何影片！';
+      return [];
     }
+  
+    let todayMovies = movieList.movies.filter(movie => movie.tags.includes('今日新種'));
+  
+    if (todayMovies.length > 0) {
+      await session.send('查询到今日新片，正在搜索');
+    } else {
+      await session.send('今日暂无新片，正在搜索昨日新片');
+      todayMovies = movieList.movies.filter(movie => movie.tags.includes('昨日新種'));
 
-    const limitedMovies = movieList.movies.slice(0, 5);
-
-    result = limitedMovies.map((movie) => {
-      const { title, id, img, date, tags } = movie;
-
-      let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}\n标签: ${tags.join(', ')}`;
-
-      if (config.allowPreviewCover) {
-        message += `\n封面: ${segment.image(img)}`;
+      if (todayMovies.length === 0) {
+        await session.send('近日暂无新片，正在搜索现有影片');
+        todayMovies = movieList.movies.slice(0, 5);
       }
-      return message;
-    });
-    return result.join('\n\n');
+    }
+  
+    return todayMovies;
   }
-
+  
   async function fetchUncensoredMovies() {
     const uncensoredMoviesUrl = config.apiPrefix + uncensoredMovieApi;
     const uncensored = await ctx.http.get(uncensoredMoviesUrl);
     let result = [];
-
+  
     if (!uncensored || !Array.isArray(uncensored.movies) || uncensored.movies.length === 0) {
       return '未找到任何影片！';
     }
-
+  
     const limitedMovies = uncensored.movies.slice(0, 5);
-
-    result = limitedMovies.map((movie) => {
+  
+    result = limitedMovies.map(async (movie) => {
       const { title, id, img, date } = movie;
-
+  
       let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}`;
-
-      if (config.allowPreviewCover) {
-        message += `\n封面: ${segment.image(img)}`;
+  
+      if (config.allowPreviewCover && img) {
+        const refererUrl = `https://www.javbus.com/${id}`;
+        message += `\n封面: ${segment.image(img, { referer: refererUrl })}`;
       }
+  
       return message;
     });
-
-    return result.join('\n\n');
+  
+    return (await Promise.all(result)).join('\n\n');
   }
-  ctx.command('jew <mode:text>', '获取最新的影片，输入“jew+空格+无码”获取最新无码影片')
-    .action(async ({ session }, mode) => {
-      let result;
+  
+  ctx.command('jew [type:text]', '查看今日最新影片')
+    .action(async ({ session }, type) => {
       try {
-        if (mode && mode.includes('无码')) {
-          result = await fetchUncensoredMovies();
-        } else {
-          result = await fetchMovies();
+        if (type === '无码') {
+          const uncensoredMovies = await fetchUncensoredMovies();
+          return uncensoredMovies;
         }
-        return result;
+  
+        const movies = await fetchMoviesByTags(session); // 传入 session
+  
+        if (movies.length === 0) {
+          return '未找到任何影片！';
+        }
+  
+        let page = 1;
+        const totalPages = Math.ceil(movies.length / 5);
+        const maxErrorCount = 3;
+        let errorCount = 0;
+        let isSearchActive = true;
+        const timeoutDuration = 15 * 1000;
+  
+        const sendPageResults = (page) => {
+          const paginatedMovies = movies.slice((page - 1) * 5, page * 5);
+          return paginatedMovies.map(movie => {
+            const { title, id, img, date, tags } = movie;
+            let message = `标题: ${title}\n番号: ${id}\n发行日期: ${date}\n标签: ${tags.join(', ')}`;
+            
+            if (config.allowPreviewCover && img) {
+              const refererUrl = `https://www.javbus.com/${id}`;
+              message += `\n封面: ${segment.image(img, { referer: refererUrl })}`;
+            }
+  
+            return message;
+          }).join('\n\n') + `\n\n第 ${page} 页，共 ${totalPages} 页`;
+        };
+  
+        const endSearch = (reason) => {
+          isSearchActive = false;
+          ctx.logger.info(`Ending search: ${reason}`);
+          session.send(reason);
+        };
+  
+        const startTimer = () => setTimeout(() => {
+          if (isSearchActive) {
+            endSearch('输入超时，搜索结束！');
+          }
+        }, timeoutDuration);
+  
+        while (isSearchActive && errorCount < maxErrorCount) {
+          await session.send(sendPageResults(page));
+          await session.send('请输入页码数字，或等待15秒自动退出搜索：');
+  
+          const timer = startTimer();
+  
+          try {
+            const userInput = await session.prompt(timeoutDuration);
+            clearTimeout(timer);
+  
+            const userPageNumber = parseInt(userInput);
+  
+            if (!isSearchActive) return;
+  
+            if (!isNaN(userPageNumber) && userPageNumber >= 1 && userPageNumber <= totalPages) {
+              page = userPageNumber;
+            } else {
+              errorCount++;
+              if (errorCount >= maxErrorCount) {
+                endSearch('错误次数过多，搜索结束！');
+              } else {
+                await session.send('无效的页码，请输入有效的数字！');
+              }
+            }
+          } catch (e) {
+            endSearch('输入超时，搜索结束！');
+          }
+        }
       } catch (err) {
-        console.log(err);
-        return `获取影片失败！请检查网络连接: ${err}`;
+        ctx.logger.error(`发生错误: ${err}`);
+        return `发生错误! 请检查网络连接。${err}`;
       }
     });
 }
