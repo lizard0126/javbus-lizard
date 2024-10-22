@@ -1,5 +1,4 @@
-import { Context, segment, h } from 'koishi';
-import Schema from 'schemastery';
+import { Context, h, Schema } from 'koishi';
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 export const name = 'javbus-lizard';
 
@@ -10,7 +9,7 @@ export const usage = `
 
 项目整合修改自javbus和magnet-preview，api需要自行部署，参考项目[javbus-api](https://github.com/ovnrain/javbus-api)
 
-经测试2024/10/12可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
+经测试2024/10/22可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
 
 ## 主要功能及示例调用：
 - 番号搜索  示例指令：jav SSIS-834
@@ -27,9 +26,9 @@ export const usage = `
   - 若添加参数无码，则返回最新上传的最多五部无码影片。
 
 ## 本次更新：
-- 优化封面图获取方式，给所有请求添加了referer，获取封面更稳定了
+- 更改了预览图的获取方式，不再通过api而是直接从数组中获取
 
-- 修改了jew指令获取影片的方式，取消了有码影片的数量限制
+- 更改了图片发送方式
 
 ## todo：
 - 搜索女优信息
@@ -77,24 +76,10 @@ export function apply(ctx: Context, config: Config) {
     date?: string;
     stars?: Array<{ name: string }>;
     img?: string;
+    samples: { src: string, referer: string }[];
   }
 
   //通过番号查找av信息
-  async function getScreenshotsFromApi(magnetLink) {
-    const apiUrl = `https://whatslink.info/api/v1/link?url=${encodeURIComponent(magnetLink)}`;
-    try {
-      const response = await ctx.http.get(apiUrl);
-      if (response.screenshots && response.screenshots.length > 0) {
-        return response.screenshots.map(screenshotData => screenshotData.screenshot);
-      } else {
-        return [];
-      }
-    } catch (err) {
-      ctx.logger.error('获取截图失败:', err);
-      return [];
-    }
-  }
-
   async function fetchMovieDetail(number: string): Promise<MovieDetail> {
     const movieUrl = config.apiPrefix + movieDetailApi + number;
   
@@ -104,10 +89,12 @@ export function apply(ctx: Context, config: Config) {
       date: "",
       stars: [],
       img: "",
+      samples: []
     };
   
     const movieData = await ctx.http.get(movieUrl);
-    const { title, id, gid, date, uc, stars, img } = movieData;
+    const { title, id, gid, date, uc, stars, img, samples } = movieData;
+  
     result = { ...result, ...{ title, id, gid, date, uc, stars, img } };
   
     if (config.allowDownloadLink) {
@@ -120,35 +107,46 @@ export function apply(ctx: Context, config: Config) {
   
     if (config.allowPreviewCover && img) {
       const refererUrl = `https://www.javbus.com/${id}`;
+      //ctx.logger.info(`开始获取番号 ${number} 的封面图片`);
       const imageResponse = await ctx.http.get(img, {
         headers: {
           referer: refererUrl,
         },
       });
       result.img = imageResponse;
+      //ctx.logger.info(`成功获取番号 ${number} 的封面图片`);
+    }
+    
+    if (config.allowPreviewMovie && samples && samples.length > 0) {
+      //ctx.logger.info(`开始获取番号 ${number} 的预览截图`);
+      result.samples = samples.map(sample => ({
+        src: sample.src,
+        referer: `https://www.javbus.com/${id}`
+      }));
+      //ctx.logger.info(`成功获取番号 ${number} 的预览截图`);
     }
   
     return result;
   }
-
+  
   async function sendForwardedMessages(session, screenshots, userId) {
     const bot = await session.bot;
     const UserInfo = await bot.getUser(userId);
     const nickname: string = UserInfo.username;
-
+  
     const forwardMessages = screenshots.map((screenshot, index) => {
       const attrs = {
         userId: userId,
         nickname: nickname,
       };
-      return h('message', attrs, segment.image(screenshot));
+      return h('message', attrs, h.image(screenshot.src, { referer: screenshot.referer }));
     });
-
+  
     const forwardMessage = h('message', { forward: true, children: forwardMessages });
-
+  
     try {
       await session.send(forwardMessage);
-      ctx.logger.info(`合并转发消息发送成功`);
+      //ctx.logger.info(`合并转发消息发送成功`);
     } catch (error) {
       ctx.logger.error(`合并转发消息发送失败: ${error}`);
     }
@@ -159,36 +157,34 @@ export function apply(ctx: Context, config: Config) {
       try {
         if (!number) return '请提供番号!';
         const result = await fetchMovieDetail(number);
-        const { title, magnets, date, stars, img } = result;
+        const { title, magnets, date, stars, img, samples } = result;
         const starsArray = stars.map(star => star.name);
         const starsname = starsArray.length > 1 ? starsArray.join(', ') : starsArray[0];
-
+  
         let message = `标题: ${title}\n发行日期: ${date}\n女优: ${starsname}`;
-
+  
         if (config.allowDownloadLink) {
           message += `\n磁力: ${magnets}`;
         }
-
+  
         await session.sendQueued(message);
-
+  
         if (config.allowPreviewCover && img) {
-          await session.sendQueued(segment.image(img));
-          ctx.logger.info('已发送封面图片');
+          await session.sendQueued(h.image(img));
+          //ctx.logger.info('已发送封面图片');
         }
   
-        if (config.allowPreviewMovie && result.magnets) {
-          const magnetLink = result.magnets.split('\n').pop();
+        if (config.allowPreviewMovie && samples.length > 0) {
           const [tipMessageId] = await session.send('正在获取截图...');
-          const screenshots = await getScreenshotsFromApi(magnetLink);
-
+          const screenshots = samples;
+  
           if (screenshots && screenshots.length > 0) {
-            ctx.logger.info(`成功获取到 ${screenshots.length} 张截图`);
+            await session.send(`成功获取到 ${screenshots.length} 张截图，数量较多请耐心等待发送`);
             await sendForwardedMessages(session, screenshots, session.userId);
           } else {
-            await session.send('无法获取预览截图。');
-            ctx.logger.warn('获取预览截图失败或截图为空');
+            await session.send('获取预览截图失败或截图为空');
           }
-          
+  
           await session.bot.deleteMessage(session.channelId, tipMessageId);
         }
       } catch (err) {
@@ -221,7 +217,7 @@ export function apply(ctx: Context, config: Config) {
             referer: refererUrl,
           },
         });
-        message += `\n封面: ${segment.image(imageResponse)}`;
+        message += `\n封面: ${h.image(imageResponse)}`;
       }
 
       return message;
@@ -286,7 +282,7 @@ export function apply(ctx: Context, config: Config) {
   
       if (config.allowPreviewCover && img) {
         const refererUrl = `https://www.javbus.com/${id}`;
-        message += `\n封面: ${segment.image(img, { referer: refererUrl })}`;
+        message += `\n封面: ${h.image(img, { referer: refererUrl })}`;
       }
   
       return message;
@@ -324,7 +320,7 @@ export function apply(ctx: Context, config: Config) {
             
             if (config.allowPreviewCover && img) {
               const refererUrl = `https://www.javbus.com/${id}`;
-              message += `\n封面: ${segment.image(img, { referer: refererUrl })}`;
+              message += `\n封面: ${h.image(img, { referer: refererUrl })}`;
             }
   
             return message;
