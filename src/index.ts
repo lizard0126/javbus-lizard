@@ -26,9 +26,9 @@ export const usage = `
   - 若添加参数无码，则返回最新上传的最多五部无码影片。
 
 ## 本次更新：
-- 更改了预览图的获取方式，不再通过api而是直接从数组中获取
+- 修复了部分预览图返回错误的问题，清除了数组中的无效数据
 
-- 更改了图片发送方式
+- 给jew指令添加了结束指令，无需被动等待15秒
 
 ## todo：
 - 搜索女优信息
@@ -114,16 +114,22 @@ export function apply(ctx: Context, config: Config) {
         },
       });
       result.img = imageResponse;
-      //ctx.logger.info(`成功获取番号 ${number} 的封面图片`);
+      ctx.logger.info(`成功获取番号 ${number} 的封面图片`);
     }
     
     if (config.allowPreviewMovie && samples && samples.length > 0) {
-      //ctx.logger.info(`开始获取番号 ${number} 的预览截图`);
-      result.samples = samples.map(sample => ({
-        src: sample.src,
-        referer: `https://www.javbus.com/${id}`
-      }));
-      //ctx.logger.info(`成功获取番号 ${number} 的预览截图`);
+      const validSamples = samples.filter(sample => sample.src && sample.src.startsWith('http'));
+
+      if (validSamples.length > 0) {
+        ctx.logger.info(`开始获取番号 ${number} 的预览截图`);
+        result.samples = validSamples.map(sample => ({
+          src: sample.src,
+          referer: `https://www.javbus.com/${id}`
+        }));
+        ctx.logger.info(`成功获取番号 ${number} 的预览截图`);
+      } else {
+        result.samples = [];
+      }
     }
   
     return result;
@@ -175,14 +181,14 @@ export function apply(ctx: Context, config: Config) {
         }
   
         if (config.allowPreviewMovie && samples.length > 0) {
-          const [tipMessageId] = await session.send('正在获取截图...');
+          const [tipMessageId] = await session.send('正在获取预览图...');
           const screenshots = samples;
   
           if (screenshots && screenshots.length > 0) {
-            await session.send(`成功获取到 ${screenshots.length} 张截图，数量较多请耐心等待发送`);
+            await session.send(`成功获取到 ${screenshots.length} 张预览图，请耐心等待发送`);
             await sendForwardedMessages(session, screenshots, session.userId);
           } else {
-            await session.send('获取预览截图失败或截图为空');
+            await session.send('获取预览图失败或预览图为空');
           }
   
           await session.bot.deleteMessage(session.channelId, tipMessageId);
@@ -341,7 +347,7 @@ export function apply(ctx: Context, config: Config) {
   
         while (isSearchActive && errorCount < maxErrorCount) {
           await session.send(sendPageResults(page));
-          await session.send('请输入页码数字，或等待15秒自动退出搜索：');
+          await session.send('请输入页码数字换页，输入 "stop" 或 "结束" 停止搜索，或等待15秒自动退出搜索');
   
           const timer = startTimer();
   
@@ -352,6 +358,11 @@ export function apply(ctx: Context, config: Config) {
             const userPageNumber = parseInt(userInput);
   
             if (!isSearchActive) return;
+
+            if (userInput.toLowerCase() === 'stop' || userInput === '结束') {
+              endSearch('搜索已手动结束！');
+              return;
+            }
   
             if (!isNaN(userPageNumber) && userPageNumber >= 1 && userPageNumber <= totalPages) {
               page = userPageNumber;
