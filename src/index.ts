@@ -40,7 +40,7 @@ export const usage = `
 <details>
 <summary>如果要反馈建议或报告问题</summary>
 
-可以[点这里](https://github.com/lizard0126/anime-convention-lizard/issues)创建议题~
+可以[点这里](https://github.com/lizard0126/javbus-lizard/issues)创建议题~
 </details>
 <details>
 <summary>如果喜欢我的插件</summary>
