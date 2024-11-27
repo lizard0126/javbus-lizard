@@ -7,7 +7,7 @@
 
 项目整合修改自javbus和magnet-preview，api需要自行部署，参考项目[javbus-api](https://github.com/ovnrain/javbus-api)
 
-经测试2024/10/30可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
+请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
 
 ## 主要功能及示例调用：
 <details>
@@ -19,25 +19,31 @@
   - 通过关键词搜索相关的影片。
 
 - 最新今日影片  示例指令：jew
-  - 可选参数：无码（指令为jew+空格+无码）
+  - 可选参数：无码
 
   - 获取今日上传影片，若今日无新片则获取昨日上传的影片。都没有则获取目前最新的五部
 
   - 若添加参数无码，则返回最新上传的最多五部无码影片。
 </details>
 
+## 本次更新：
+- 完善信息返回
+
 ## todo：
 - 优化代码
 
 - ……
 
-## 若有更好的意见或建议，请[点此](https://github.com/lizard0126/javbus-lizard/issues)提issue。
 ---
-## 如果喜欢我的插件
 <details>
+<summary>如果要反馈建议或报告问题</summary>
 
-可以[请我喝可乐](https://ifdian.net/a/lizard0126)，没准就有动力更新新功能了
+可以[点这里](https://github.com/lizard0126/anime-convention-lizard/issues)创建议题~
+</details>
+<details>
+<summary>如果喜欢我的插件</summary>
 
+可以[请我喝可乐](https://ifdian.net/a/lizard0126)，没准就有动力更新新功能了~
 </details>
 
 ---
@@ -45,6 +51,8 @@
 
 <details>
 
+### 3.1.7
+- 完善信息返回
 ### 3.1.6
 - 修复了部分封面无法返回的问题
 - 取消了根据关键词搜索影片的数量限制并添加了分页

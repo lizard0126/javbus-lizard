@@ -9,7 +9,7 @@ export const usage = `
 
 项目整合修改自javbus和magnet-preview，api需要自行部署，参考项目[javbus-api](https://github.com/ovnrain/javbus-api)
 
-经测试2024/10/30可用。请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
+请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
 
 ## 主要功能及示例调用：
 <details>
@@ -21,7 +21,7 @@ export const usage = `
   - 通过关键词搜索相关的影片。
 
 - 最新今日影片  示例指令：jew
-  - 可选参数：无码（指令为jew+空格+无码）
+  - 可选参数：无码
 
   - 获取今日上传影片，若今日无新片则获取昨日上传的影片。都没有则获取目前最新的五部
 
@@ -29,24 +29,23 @@ export const usage = `
 </details>
 
 ## 本次更新：
-- 修复了部分封面无法返回的问题
-
-- 取消了根据关键词搜索影片的数量限制并添加了分页
-
-- 精简指令
+- 完善信息返回
 
 ## todo：
 - 优化代码
 
 - ……
 
-## 若有更好的意见或建议，请[点此](https://github.com/lizard0126/javbus-lizard/issues)提issue。
 ---
-## 如果喜欢我的插件
 <details>
+<summary>如果要反馈建议或报告问题</summary>
 
-可以[请我喝可乐](https://ifdian.net/a/lizard0126)，没准就有动力更新新功能了
+可以[点这里](https://github.com/lizard0126/anime-convention-lizard/issues)创建议题~
+</details>
+<details>
+<summary>如果喜欢我的插件</summary>
 
+可以[请我喝可乐](https://ifdian.net/a/lizard0126)，没准就有动力更新新功能了~
 </details>
 
 `;
@@ -119,26 +118,22 @@ export function apply(ctx: Context, config: Config) {
 
     if (config.allowPreviewCover && img) {
       const refererUrl = `https://www.javbus.com/${id}`;
-      //ctx.logger.info(`开始获取番号 ${number} 的封面图片`);
       const imageResponse = await ctx.http.get(img, {
         headers: {
           referer: refererUrl,
         },
       });
       result.img = imageResponse;
-      //ctx.logger.info(`成功获取番号 ${number} 的封面图片`);
     }
 
     if (config.allowPreviewMovie && samples && samples.length > 0) {
       const validSamples = samples.filter(sample => sample.src && sample.src.startsWith('http'));
 
       if (validSamples.length > 0) {
-        //ctx.logger.info(`开始获取番号 ${number} 的预览截图`);
         result.samples = validSamples.map(sample => ({
           src: sample.src,
           referer: `https://www.javbus.com/${id}`
         }));
-        //ctx.logger.info(`成功获取番号 ${number} 的预览截图`);
       } else {
         result.samples = [];
       }
@@ -171,13 +166,12 @@ export function apply(ctx: Context, config: Config) {
 
     try {
       await session.send(forwardMessage);
-      // ctx.logger.info(`合并转发消息发送成功`);
     } catch (error) {
       ctx.logger.error(`合并转发消息发送失败: ${error}`);
     }
   }
 
-  ctx.command('jav <number:text>', '查找javbus番号')
+  ctx.command('jav <number:text>', '番号搜索影片')
     .action(async ({ session }, number) => {
       try {
         if (!number) return '请提供番号!';
@@ -196,7 +190,6 @@ export function apply(ctx: Context, config: Config) {
 
         if (config.allowPreviewCover && img) {
           await session.sendQueued(h.image(img));
-          //ctx.logger.info('已发送封面图片');
         }
 
         if (config.allowPreviewMovie && samples.length > 0) {
@@ -214,7 +207,7 @@ export function apply(ctx: Context, config: Config) {
         }
       } catch (err) {
         ctx.logger.error(`发生错误: ${err}`);
-        return `发生错误!请检查网络连接、指令jav后是否添加空格、番号是否用-连接;  ${err}`;
+        return `发生错误请检查番号是否正确！\n${err}`;
       }
     });
 
@@ -274,7 +267,7 @@ export function apply(ctx: Context, config: Config) {
 
       while (isSearchActive && errorCount < maxErrorCount) {
         await session.send(await sendPageResults(page));
-        await session.send('请输入页码数字换页\n\n输入“0”停止搜索，或等待15秒自动退出搜索');
+        await session.send('请选择页码数字，输入“0”停止搜索');
 
         const timer = startTimer();
 
@@ -312,7 +305,7 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
-  ctx.command('jkw <keyword:text>', '通过关键词搜索，支持分页')
+  ctx.command('jkw <keyword:text>', '关键词搜索影片')
     .action(async ({ session }, keyword) => {
       if (!keyword) return '请输入关键词';
       await fetchMoviesByKeyword(keyword, session);
@@ -376,9 +369,13 @@ export function apply(ctx: Context, config: Config) {
     return result.join('\n\n');
   }
 
-  ctx.command('jew [type:text]', '查看今日最新影片')
+  ctx.command('jew [type:text]', '搜索最新影片，支持无码')
     .action(async ({ session }, type) => {
       try {
+        if (type !== '无码') {
+          return '如需关键词搜索请使用指令“jkw”\n本指令仅支持参数“无码”';
+        }
+
         if (type === '无码') {
           const uncensoredMovies = await fetchUncensoredMovies();
           return uncensoredMovies;
@@ -434,7 +431,7 @@ export function apply(ctx: Context, config: Config) {
 
         while (isSearchActive && errorCount < maxErrorCount) {
           await session.send(await sendPageResults(page));
-          await session.send('请输入页码数字换页\n\n输入“0”停止搜索，或等待15秒自动退出搜索');
+          await session.send('请选择页码数字，输入“0”停止搜索');
 
           const timer = startTimer();
 
