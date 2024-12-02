@@ -372,7 +372,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('jew [type:text]', '搜索最新影片，支持无码')
     .action(async ({ session }, type) => {
       try {
-        if (type !== '无码') {
+        if (type !== '无码' && type !== undefined) {
           return '如需关键词搜索请使用指令“jkw”\n本指令仅支持参数“无码”';
         }
 
