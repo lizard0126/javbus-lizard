@@ -2,55 +2,53 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-javbus-lizard?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-javbus-lizard)
 
-# NSFW警告!!!
+# ⚠️ NSFW警告!!!
 ## 用于查询番号返回磁力链接、封面预览、内容预览截图
 
-项目整合修改自javbus和magnet-preview，api需要自行部署，参考项目[javbus-api](https://github.com/ovnrain/javbus-api)
+## API需要自行部署，参考项目 [javbus-api](https://github.com/ovnrain/javbus-api)
 
-请低调使用, 请勿配置于QQ或者是其他国内APP平台, 带来的后果请自行承担。
+## 请低调使用，请勿配置于QQ或者其他国内APP平台，带来的后果请自行承担。
 
-## 主要功能及示例调用：
 <details>
+<summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">使用方法</span></strong></summary>
 
-- 番号搜索  示例指令：jav SSIS-834
-  - 通过番号搜索影片的详细信息，包括影片标题、发行日期、女优。根据插件配置，还可以返回磁力链接、封面和预览图。
+### 通过番号搜索影片
+#### 示例：
+<pre style="background-color: #f4f4f4; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">jav ABP-123 // 搜索番号ABP-123</pre>
 
-- 关键词搜索  示例指令：jkw 三上
-  - 通过关键词搜索相关的影片。
+### 关键词搜索影片
+#### 示例：
+<pre style="background-color: #f4f4f4; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">jkw 高桥しょう子 // 搜索关键词高桥しょう子</pre>
 
-- 最新今日影片  示例指令：jew
-  - 可选参数：无码
-
-  - 获取今日上传影片，若今日无新片则获取昨日上传的影片。都没有则获取目前最新的五部
-
-  - 若添加参数无码，则返回最新上传的最多五部无码影片。
+### 获取最新影片
+#### 支持的类型：
+- **无码**：获取无码影片
+- **省略**：则获取有码影片
+#### 示例：
+<pre style="background-color: #f4f4f4; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">jew // 获取最新有码影片</pre>
+<pre style="background-color: #f4f4f4; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">jew 无码 // 获取最新无码影片</pre>
 </details>
 
-## 本次更新：
-- 完善信息返回
-
-## todo：
-- 优化代码
-
-- ……
-
----
 <details>
-<summary>如果要反馈建议或报告问题</summary>
+<summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">如果要反馈建议或报告问题</span></strong></summary>
 
-可以[点这里](https://github.com/lizard0126/javbus-lizard/issues)创建议题~
+<strong>可以[点这里](https://github.com/lizard0126/javbus-lizard/issues)创建议题~</strong>
 </details>
-<details>
-<summary>如果喜欢我的插件</summary>
 
-可以[请我喝可乐](https://ifdian.net/a/lizard0126)，没准就有动力更新新功能了~
+<details>
+<summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">如果喜欢我的插件</span></strong></summary>
+
+<strong>可以[请我喝可乐](https://ifdian.net/a/lizard0126)，没准就有动力更新新功能了~</strong>
 </details>
 
 ---
-## 更新日志：
-
 <details>
+<summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">更新日志</span></strong></summary>
 
+### 4.0.0
+- 重构代码，精简结构
+- 去掉了冗余的分页操作
+- 新增了配置项，可以选择返回的影片数量
 ### 3.1.7
 - 完善信息返回
 ### 3.1.6
