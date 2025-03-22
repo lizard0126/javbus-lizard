@@ -6,6 +6,7 @@ export interface Config {
     magnet: boolean;
     cover: boolean;
     preview: boolean;
+    ifForward: boolean;
     count: number;
 }
 export declare const Config: Schema<Schemastery.ObjectS<{
@@ -13,12 +14,14 @@ export declare const Config: Schema<Schemastery.ObjectS<{
     magnet: Schema<boolean, boolean>;
     cover: Schema<boolean, boolean>;
     preview: Schema<boolean, boolean>;
+    ifForward: Schema<boolean, boolean>;
     count: Schema<number, number>;
 }>, Schemastery.ObjectT<{
     api: Schema<string, string>;
     magnet: Schema<boolean, boolean>;
     cover: Schema<boolean, boolean>;
     preview: Schema<boolean, boolean>;
+    ifForward: Schema<boolean, boolean>;
     count: Schema<number, number>;
 }>>;
 export declare function apply(ctx: Context, config: Config): void;

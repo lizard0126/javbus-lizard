@@ -50,21 +50,24 @@ export interface Config {
   magnet: boolean;
   cover: boolean;
   preview: boolean;
+  ifForward: boolean;
   count: number;
 }
 
 export const Config = Schema.object({
   api: Schema.string().default('').required().description('api形如https://aaa.bbb.ccc'),
-  magnet: Schema.boolean().default(false).description('是否返回磁链'),
+  magnet: Schema.boolean().default(true).description('是否返回磁链'),
   cover: Schema.boolean().default(false).description('是否返回封面'),
   preview: Schema.boolean().default(false).description('是否返回预览'),
+  ifForward: Schema.boolean().default(false).description('是否合并转发（非onebot平台请勿开启）'),
   count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
 });
 
-const movieApi = '/api/movies/';                    //获取影片列表
-const uncensoredApi = '/api/movies?type=uncensored';//获取影片列表
-const searchApi = '/api/movies/search?keyword=';    //关键词搜索影片
-const magnetApi = '/api/magnets/';                  //获取影片磁力链接
+const movieApi = '/api/movies/';                                //获取影片详情
+const magnetApi = '/api/magnets/';                              //获取影片磁力链接
+const fetchApi = '/api/movies?magnet=all';                      //获取影片列表
+const uncensoredApi = '/api/movies?magnet=all&type=uncensored'; //获取无码影片列表
+const searchApi = '/api/movies/search?magnet=all&keyword=';     //关键词搜索影片
 
 export function apply(ctx: Context, config: Config) {
   interface MovieDetail {
@@ -200,7 +203,6 @@ export function apply(ctx: Context, config: Config) {
 
   //获取最新影片
   async function newMovie(url: string): Promise<Movies[]> {
-
     try {
       const searchData = await ctx.http.get(url);
 
@@ -237,10 +239,16 @@ export function apply(ctx: Context, config: Config) {
         }
 
         if (config.preview && movie.samples.length > 0) {
-          const messages = movie.samples.map(sample => ({
-            src: sample.src
-          }));
-          await forward(session, messages, session.userId);
+          if (config.ifForward) {
+            const messages = movie.samples.map(sample => ({
+              src: sample.src
+            }));
+            await forward(session, messages, session.userId);
+          } else {
+            for (const sample of movie.samples) {
+              await session.send(h.image(await fetchImage(sample.src, sample.referer)));
+            }
+          }
         }
       } catch (error) {
         return `发生错误，请检查番号是否正确！\n${error.message}`;
@@ -267,7 +275,13 @@ export function apply(ctx: Context, config: Config) {
           referer: `https://www.javbus.com/${movie.id}`,
         }));
 
-        await forward(session, messages, session.userId);
+        if (config.ifForward) {
+          await forward(session, messages, session.userId);
+        } else {
+          for (const msg of messages) {
+            await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
+          }
+        }
       } catch (error) {
         return `发生错误，请稍后再试。\n${error.message}`;
       }
@@ -285,7 +299,7 @@ export function apply(ctx: Context, config: Config) {
           return '如需关键词搜索请使用指令 “jkw”\n本指令仅支持参数 “无码”';
         }
       } else {
-        listUrl += movieApi;
+        listUrl += fetchApi;
         ctx.logger.info(listUrl);
       }
 
@@ -302,7 +316,13 @@ export function apply(ctx: Context, config: Config) {
           referer: `https://www.javbus.com/${movie.id}`,
         }));
 
-        await forward(session, messages, session.userId);
+        if (config.ifForward) {
+          await forward(session, messages, session.userId);
+        } else {
+          for (const msg of messages) {
+            await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
+          }
+        }
       } catch (error) {
         return `发生错误，请稍后再试。\n${error.message}`;
       }
