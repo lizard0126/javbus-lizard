@@ -59,7 +59,7 @@ export const Config = Schema.object({
   magnet: Schema.boolean().default(true).description('是否返回磁链'),
   cover: Schema.boolean().default(false).description('是否返回封面'),
   preview: Schema.boolean().default(false).description('是否返回预览'),
-  ifForward: Schema.boolean().default(false).description('是否合并转发（非onebot平台请勿开启）'),
+  ifForward: Schema.boolean().default(false).description('是否合并转发（已适配onebot、telegram平台）'),
   count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
 });
 
@@ -99,36 +99,73 @@ export function apply(ctx: Context, config: Config) {
     return `data:image/jpeg;base64,${Buffer.from(imageBuffer).toString('base64')}`;
   }
 
-  //合并转发
-  async function forward(session, messages, userId) {
-    const bot = await session.bot;
-    const UserInfo = await bot.getUser(userId);
-    const nickname: string = UserInfo.username;
-    const messageCount = messages.length;
+  async function fetchImageBuffer(url: string, referer: string): Promise<Buffer> {
+    const arrayBuffer = await ctx.http.get<ArrayBuffer>(url, {
+      headers: { referer },
+      responseType: 'arraybuffer',
+    });
 
+    return Buffer.from(arrayBuffer);
+  }
+
+  //合并转发
+  async function forward(session, messages) {
+    const bot = await session.bot;
+    const platform = bot.platform;
+    const messageCount = messages.length;
     const [tipMessageId] = await session.send(`共 ${messageCount} 条消息合并转发中...`);
 
-    const forwardMessages = await Promise.all(
-      messages.map(async (msg) => {
-        const attrs = { userId: userId, nickname: nickname };
+    if (platform === 'onebot') {
+      const UserInfo = await bot.getUser(session.userId);
+      const nickname: string = UserInfo.username;
+      const forwardMessages = await Promise.all(
+        messages.map(async (msg) => {
+          const attrs = { userId: session.userId, nickname: nickname };
 
-        const imageData = await fetchImage(msg.src, msg.referer);
-        if (msg.text) {
-          return h('message', attrs, `${msg.text}\n`, h.image(imageData));
-        } else {
-          return h('message', attrs, h.image(imageData));
-        }
-      })
-    );
+          const imageData = await fetchImage(msg.src, msg.referer);
+          if (msg.text) {
+            return h('message', attrs, `${msg.text}\n`, h.image(imageData));
+          } else {
+            return h('message', attrs, h.image(imageData));
+          }
+        })
+      );
 
-    const forwardMessage = h('message', { forward: true, children: forwardMessages });
+      const forwardMessage = h('message', { forward: true, children: forwardMessages });
 
-    try {
-      await session.send(forwardMessage);
-      await session.bot.deleteMessage(session.channelId, tipMessageId);
-    } catch (error) {
-      await session.send(`合并转发消息发送失败: ${error}`);
-      await session.bot.deleteMessage(session.channelId, tipMessageId);
+      try {
+        await session.send(forwardMessage);
+        await session.bot.deleteMessage(session.channelId, tipMessageId);
+      } catch (error) {
+        await session.send(`合并转发消息发送失败: ${error}`);
+        await session.bot.deleteMessage(session.channelId, tipMessageId);
+      }
+
+    } else if (platform === 'telegram') {
+
+
+
+      try {
+        const group = messages.map(msg => ({
+          type: 'photo',
+          media: msg.src,
+          caption: (msg.text || '').slice(0, 1024),
+        }));
+
+        ctx.logger.info(group);
+
+        await bot.internal.sendMediaGroup(session.channelId, group);
+
+        await bot.deleteMessage(session.channelId, tipMessageId);
+      } catch (error) {
+        ctx.logger.error('消息发送失败:', error);
+      }
+
+
+
+    } else {
+      await session.send(`当前平台（${platform}）暂不支持合并转发功能。`);
+      await bot.deleteMessage(session.channelId, tipMessageId);
     }
   }
 
@@ -243,7 +280,7 @@ export function apply(ctx: Context, config: Config) {
             const messages = movie.samples.map(sample => ({
               src: sample.src
             }));
-            await forward(session, messages, session.userId);
+            await forward(session, messages);
           } else {
             for (const sample of movie.samples) {
               await session.send(h.image(await fetchImage(sample.src, sample.referer)));
@@ -276,7 +313,7 @@ export function apply(ctx: Context, config: Config) {
         }));
 
         if (config.ifForward) {
-          await forward(session, messages, session.userId);
+          await forward(session, messages);
         } else {
           for (const msg of messages) {
             await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
@@ -317,7 +354,7 @@ export function apply(ctx: Context, config: Config) {
         }));
 
         if (config.ifForward) {
-          await forward(session, messages, session.userId);
+          await forward(session, messages);
         } else {
           for (const msg of messages) {
             await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
@@ -327,4 +364,38 @@ export function apply(ctx: Context, config: Config) {
         return `发生错误，请稍后再试。\n${error.message}`;
       }
     });
+
+  ctx.command('t', '测试')
+    .action(async ({ session }) => {
+      await session.send('测试开始');
+      try {
+        const mediaGroup = [
+          {
+            type: 'photo',
+            media: 'https://pics.dmm.co.jp/digital/video/ipx00666/ipx00666jp-1.jpg',
+            //  caption: '第一张图片',
+          },
+          {
+            type: 'photo',
+            media: 'https://pics.dmm.co.jp/digital/video/ipx00666/ipx00666jp-1.jpg',
+            //  caption: '第二张图片',
+          },
+        ];
+
+        await session.bot.internal.sendMediaGroup({
+          chat_id: '-1001771140342',
+          media: mediaGroup,
+        });
+        return '发送成功'
+
+      } catch (error) {
+        return `发生错误，请稍后再试。\n${error.message}`;
+      }
+    });
+
+
+
+
+
+
 }
