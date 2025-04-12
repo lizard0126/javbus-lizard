@@ -51,6 +51,7 @@ export interface Config {
   cover: boolean;
   preview: boolean;
   ifForward: boolean;
+  ifPre: boolean;
   count: number;
 }
 
@@ -60,14 +61,18 @@ export const Config = Schema.object({
   cover: Schema.boolean().default(false).description('是否返回封面'),
   preview: Schema.boolean().default(false).description('是否返回预览'),
   ifForward: Schema.boolean().default(false).description('是否合并转发（已适配onebot、telegram平台）'),
+  ifPre: Schema.boolean().default(false).description('是否展示未发型影片（影响最新影片展示，不影响jav指令搜索）'),
   count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
 });
 
-const movieApi = '/api/movies/';                                //获取影片详情
-const magnetApi = '/api/magnets/';                              //获取影片磁力链接
-const fetchApi = '/api/movies?magnet=all';                      //获取影片列表
-const uncensoredApi = '/api/movies?magnet=all&type=uncensored'; //获取无码影片列表
-const searchApi = '/api/movies/search?magnet=all&keyword=';     //关键词搜索影片
+const movieApi = '/api/movies/';
+const magnetApi = '/api/magnets/';
+const fetchApi = '/api/movies?magnet=all';
+const fetchApi0 = '/api/movies';
+const uncensoredApi = '/api/movies?magnet=all&type=uncensored';
+const uncensoredApi0 = '/api/movies?type=uncensored';
+const searchApi = '/api/movies/search?magnet=all&keyword=';
+const searchApi0 = '/api/movies/search?keyword=';
 
 export function apply(ctx: Context, config: Config) {
   interface MovieDetail {
@@ -220,7 +225,9 @@ export function apply(ctx: Context, config: Config) {
 
   //关键词搜索影片
   async function fetchKeyword(keyword: string): Promise<Movies[]> {
-    const keywordUrl = config.api + searchApi + encodeURIComponent(keyword);
+    let keywordUrl;
+    if (config.ifPre) keywordUrl = config.api + searchApi + encodeURIComponent(keyword);
+    else keywordUrl = config.api + searchApi0 + encodeURIComponent(keyword);
 
     try {
       const searchData = await ctx.http.get(keywordUrl);
@@ -330,14 +337,14 @@ export function apply(ctx: Context, config: Config) {
       let listUrl = config.api
       if (type) {
         if (type === "无码") {
-          listUrl += uncensoredApi;
-          ctx.logger.info(listUrl);
+          if (config.ifPre) listUrl += uncensoredApi;
+          else listUrl += uncensoredApi0;
         } else {
           return '如需关键词搜索请使用指令 “jkw”\n本指令仅支持参数 “无码”';
         }
       } else {
-        listUrl += fetchApi;
-        ctx.logger.info(listUrl);
+        if (config.ifPre) listUrl += fetchApi;
+        else listUrl += fetchApi0;
       }
 
       try {
