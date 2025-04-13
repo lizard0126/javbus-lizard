@@ -1,4 +1,5 @@
 import { Context, h, Schema } from 'koishi';
+import FormData from 'form-data';
 // npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
 export const name = 'javbus-lizard';
 
@@ -61,7 +62,7 @@ export const Config = Schema.object({
   cover: Schema.boolean().default(false).description('是否返回封面'),
   preview: Schema.boolean().default(false).description('是否返回预览'),
   ifForward: Schema.boolean().default(false).description('是否合并转发（已适配onebot、telegram平台）'),
-  ifPre: Schema.boolean().default(false).description('是否展示未发型影片（影响最新影片展示，不影响jav指令搜索）'),
+  ifPre: Schema.boolean().default(false).description('是否展示未发行影片（影响最新影片展示，不影响jav指令搜索）'),
   count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
 });
 
@@ -104,6 +105,7 @@ export function apply(ctx: Context, config: Config) {
     return `data:image/jpeg;base64,${Buffer.from(imageBuffer).toString('base64')}`;
   }
 
+  //请求图片buffer
   async function fetchImageBuffer(url: string, referer: string): Promise<Buffer> {
     const arrayBuffer = await ctx.http.get<ArrayBuffer>(url, {
       headers: { referer },
@@ -111,6 +113,16 @@ export function apply(ctx: Context, config: Config) {
     });
 
     return Buffer.from(arrayBuffer);
+  }
+
+  //上传图片到skyimg.de图床
+  async function uploadImage(ctx, buffer) {
+    const form = new FormData()
+    form.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' })
+    const response = await ctx.http.post('https://skyimg.de/api/upload', form.getBuffer(),
+      { headers: form.getHeaders() })
+
+    return response
   }
 
   //合并转发
@@ -147,26 +159,29 @@ export function apply(ctx: Context, config: Config) {
       }
 
     } else if (platform === 'telegram') {
+      const group = await Promise.all(
+        messages.map(async (msg) => {
+          const imageBuffer = await fetchImageBuffer(msg.src, msg.referer)
+          const result = await uploadImage(ctx, imageBuffer);
+          const imgUrl = result[0].url
 
-
+          return {
+            type: 'photo',
+            media: imgUrl,
+            caption: (msg.text || '').slice(0, 1024),
+          }
+        })
+      );
 
       try {
-        const group = messages.map(msg => ({
-          type: 'photo',
-          media: msg.src,
-          caption: (msg.text || '').slice(0, 1024),
-        }));
-
-        ctx.logger.info(group);
-
-        await bot.internal.sendMediaGroup(session.channelId, group);
-
+        await bot.internal.sendMediaGroup({
+          chat_id: session.channelId,
+          media: group,
+        });
         await bot.deleteMessage(session.channelId, tipMessageId);
       } catch (error) {
         ctx.logger.error('消息发送失败:', error);
       }
-
-
 
     } else {
       await session.send(`当前平台（${platform}）暂不支持合并转发功能。`);
@@ -371,38 +386,4 @@ export function apply(ctx: Context, config: Config) {
         return `发生错误，请稍后再试。\n${error.message}`;
       }
     });
-
-  ctx.command('t', '测试')
-    .action(async ({ session }) => {
-      await session.send('测试开始');
-      try {
-        const mediaGroup = [
-          {
-            type: 'photo',
-            media: 'https://pics.dmm.co.jp/digital/video/ipx00666/ipx00666jp-1.jpg',
-            //  caption: '第一张图片',
-          },
-          {
-            type: 'photo',
-            media: 'https://pics.dmm.co.jp/digital/video/ipx00666/ipx00666jp-1.jpg',
-            //  caption: '第二张图片',
-          },
-        ];
-
-        await session.bot.internal.sendMediaGroup({
-          chat_id: '-1001771140342',
-          media: mediaGroup,
-        });
-        return '发送成功'
-
-      } catch (error) {
-        return `发生错误，请稍后再试。\n${error.message}`;
-      }
-    });
-
-
-
-
-
-
 }

@@ -45,6 +45,9 @@
 <details>
 <summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">更新日志</span></strong></summary>
 
+### 4.2.0
+- 支持tg平台发送媒体组（暂存至图床skyimg.de）
+- 优化未发行影片的搜索，设置为可选项
 ### 4.1.0
 - 更新了获取影片的url，现可获取一些偷跑的影片了
 - 将合并转发功能设为可选项，目前仅支持onebot平台，后续可能会支持其他平台
