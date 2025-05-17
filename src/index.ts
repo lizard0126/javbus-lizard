@@ -45,26 +45,39 @@ export const usage = `
 </details>
 `;
 
-
-export interface Config {
-  api: string;
-  magnet: boolean;
-  cover: boolean;
-  preview: boolean;
-  ifForward: boolean;
-  ifPre: boolean;
-  count: number;
-}
-
-export const Config = Schema.object({
-  api: Schema.string().default('').required().description('api形如https://aaa.bbb.ccc'),
-  magnet: Schema.boolean().default(true).description('是否返回磁链'),
-  cover: Schema.boolean().default(false).description('是否返回封面'),
-  preview: Schema.boolean().default(false).description('是否返回预览'),
-  ifForward: Schema.boolean().default(false).description('是否合并转发（已适配onebot、telegram平台）'),
-  ifPre: Schema.boolean().default(false).description('是否展示未发行影片（影响最新影片展示，不影响jav指令搜索）'),
-  count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
-});
+export const Config = Schema.intersect([
+  Schema.object({
+    api: Schema.string().default('').required().description('api形如 https://aaa.bbb.ccc'),
+    count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
+    ifPre: Schema.boolean().default(false).description('是否展示未发行影片（影响最新影片展示，不影响 jav 指令搜索）'),
+    ifForward: Schema.boolean().default(false).description('是否合并转发（已适配 onebot、telegram 平台）'),
+  }).description('基础设置'),
+  Schema.object({
+    cover: Schema.boolean().default(false).description('是否返回封面'),
+    preview: Schema.boolean().default(false).description('是否返回预览'),
+    magnet: Schema.boolean().default(true).description('是否返回磁链'),
+  }).description('获取设置'),
+  Schema.union([
+    Schema.object({
+      magnet: Schema.const(true),
+      magnetPriority: Schema.union([
+        Schema.const('default').description('默认顺序'),
+        Schema.const('subtitle').description('中文字幕优先'),
+        Schema.const('size-asc').description('磁链从小到大'),
+        Schema.const('size-desc').description('磁链从大到小'),
+      ])
+        .default('default')
+        .description('磁链获取顺序'),
+      magnetCount: Schema.union([
+        Schema.const(-1).description('获取全部磁链'),
+        Schema.number().min(1).default(5).description('限制最多获取的磁链数量'),
+      ])
+        .default(3)
+        .description('返回的磁链数量'),
+    }),
+    Schema.object({}),
+  ]),
+]);
 
 const movieApi = '/api/movies/';
 const magnetApi = '/api/magnets/';
@@ -75,7 +88,7 @@ const uncensoredApi0 = '/api/movies?type=uncensored';
 const searchApi = '/api/movies/search?magnet=all&keyword=';
 const searchApi0 = '/api/movies/search?keyword=';
 
-export function apply(ctx: Context, config: Config) {
+export function apply(ctx: Context, config) {
   interface MovieDetail {
     gid?: number;
     uc?: string;
@@ -222,16 +235,37 @@ export function apply(ctx: Context, config: Config) {
 
     if (config.magnet) {
       const magnetUrl = config.api + magnetApi + `${id}?gid=${gid}&uc=${uc}`;
-      const magnetList = await ctx.http.get(magnetUrl);
+      let magnetList = await ctx.http.get(magnetUrl);
+      ctx.logger.info(magnetList)
+      switch (config.magnetPriority) {
+        case 'subtitle':
+          magnetList = [
+            ...magnetList.filter(m => m.hasSubtitle),
+            ...magnetList.filter(m => !m.hasSubtitle),
+          ];
+          break;
+        case 'size-asc':
+          magnetList = magnetList.sort((a, b) =>
+            a.numberSize - b.numberSize
+          );
+          break;
+        case 'size-desc':
+          magnetList = magnetList.sort((a, b) =>
+            b.numberSize - a.numberSize
+          );
+          break;
+      }
+
+      let limit;
+      if (typeof config.magnetCount === 'number') {
+        limit = config.magnetCount === -1 ? magnetList.length : config.magnetCount;
+      }
 
       if (magnetList.length > 0) {
-        result.magnet = `磁链[1]大小：${magnetList[0].size}\n${magnetList[0].link}`;
-        if (magnetList.length > 1) {
-          result.magnet += `\n\n磁链[2]大小：${magnetList[1].size}\n${magnetList[1].link}`;
-          if (magnetList.length > 2) {
-            result.magnet += `\n\n磁链[3]大小：${magnetList[2].size}\n${magnetList[2].link}`;
-          }
-        }
+        result.magnet = magnetList
+          .slice(0, limit)
+          .map((m, i) => `磁链[${i + 1}]大小：${m.size}\n${m.link}`)
+          .join('\n\n');
       }
     }
 

@@ -45,6 +45,8 @@
 <details>
 <summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">更新日志</span></strong></summary>
 
+### 4.2.3
+- 完善了磁链返回逻辑，可以选择优先获取顺序
 ### 4.2.2
 - 适配了telegram平台媒体组数量限制（最多10张，分组发送）
 ### 4.2.0
