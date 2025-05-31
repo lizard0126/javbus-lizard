@@ -1,17 +1,16 @@
 import { Context, h, Schema } from 'koishi';
 import FormData from 'form-data';
-// npm publish --workspace koishi-plugin-javbus-lizard --access public --registry https://registry.npmjs.org
+
 export const name = 'javbus-lizard';
 
 export const usage = `
 # ⚠️ NSFW警告!!!
 ## 用于查询番号返回磁力链接、封面预览、内容预览截图
 
-## API需要自行部署，参考项目 [javbus-api](https://github.com/ovnrain/javbus-api)。原项目当前版本部署有问题，需退回至标签2.1.2版本部署
+## API需要自行部署，参考项目 [javbus-api](https://github.com/ovnrain/javbus-api)。
 
 ## 请低调使用，请勿配置于QQ或者其他国内APP平台，带来的后果请自行承担。
 
-## 4.2.4-alpha.1版本为测试版本，用于测试onebot平台嵌套合并转发
 ---
 
 <details>
@@ -81,14 +80,16 @@ export const Config = Schema.intersect([
   ]),
 ]);
 
-const movieApi = '/api/movies/';
-const magnetApi = '/api/magnets/';
-const fetchApi = '/api/movies?magnet=all';
-const fetchApi0 = '/api/movies';
-const uncensoredApi = '/api/movies?magnet=all&type=uncensored';
-const uncensoredApi0 = '/api/movies?type=uncensored';
-const searchApi = '/api/movies/search?magnet=all&keyword=';
-const searchApi0 = '/api/movies/search?keyword=';
+const api = {
+  movie: '/api/movies/',
+  magnet: '/api/magnets/',
+  fetch_all: '/api/movies?magnet=all',
+  fetch: '/api/movies',
+  uncensored_all: '/api/movies?magnet=all&type=uncensored',
+  uncensored: '/api/movies?type=uncensored',
+  search_all: '/api/movies/search?magnet=all&keyword=',
+  search: '/api/movies/search?keyword=',
+};
 
 export function apply(ctx: Context, config) {
   interface MovieDetail {
@@ -227,7 +228,7 @@ export function apply(ctx: Context, config) {
 
   //搜索影片详情
   async function fetchMovie(number: string): Promise<MovieDetail> {
-    const movieUrl = config.api + movieApi + number;
+    const movieUrl = config.api + api.movie + number;
     if (config.debug) ctx.logger.info('[影片搜索 URL]', movieUrl);
 
     let result: MovieDetail = {
@@ -245,7 +246,7 @@ export function apply(ctx: Context, config) {
     result = { ...result, gid, uc, title, img, date, videoLength, stars };
 
     if (config.magnet) {
-      const magnetUrl = config.api + magnetApi + `${id}?gid=${gid}&uc=${uc}`;
+      const magnetUrl = config.api + api.magnet + `${id}?gid=${gid}&uc=${uc}`;
       if (config.debug) ctx.logger.info('[磁链请求 URL]', magnetUrl);
       let magnetList = await ctx.http.get(magnetUrl);
 
@@ -301,8 +302,8 @@ export function apply(ctx: Context, config) {
   //关键词搜索影片
   async function fetchKeyword(keyword: string): Promise<Movies[]> {
     let keywordUrl;
-    if (config.ifPre) keywordUrl = config.api + searchApi + encodeURIComponent(keyword);
-    else keywordUrl = config.api + searchApi0 + encodeURIComponent(keyword);
+    if (config.ifPre) keywordUrl = config.api + api.search_all + encodeURIComponent(keyword);
+    else keywordUrl = config.api + api.search + encodeURIComponent(keyword);
 
     try {
       const searchData = await ctx.http.get(keywordUrl);
@@ -340,7 +341,9 @@ export function apply(ctx: Context, config) {
     }
   }
 
-  ctx.command('jav [number:text]', '通过番号搜索影片')
+  const jav = ctx.command('jav [number:text]', '通过番号搜索影片')
+
+  jav
     .action(async ({ session }, number) => {
       if (!number) return '请提供番号!\n\n可用的子指令有：\njew  获取最新影片\njkw  关键词搜索影片';
       try {
@@ -372,13 +375,22 @@ export function apply(ctx: Context, config) {
           }
         }
       } catch (error) {
-        await session.send(`搜索失败，番号错误或影片暂未发行！`);
+        const message = error.message || '';
+
+        if (/Not\sFound/.test(message)) {
+          await session.send(`番号错误或影片暂未发行`);
+        } else if (/fetch failed.*https?:\/\/[\w.-]+/.test(message)) {
+          await session.send(`服务器网络波动，请重试`);
+        } else {
+          await session.send(`发生未知错误，请查看日志`);
+        }
+
         ctx.logger.error(error);
-        return
+        return;
       }
     });
 
-  ctx.command('jav [number:text]', '通过番号搜索影片')
+  jav
     .subcommand("jkw <keyword:text>", "关键词搜索影片")
     .action(async ({ session }, keyword) => {
       if (!keyword) {
@@ -406,26 +418,35 @@ export function apply(ctx: Context, config) {
           }
         }
       } catch (error) {
-        await session.send(`搜索失败，请使用日文关键词！`);
+        const message = error.message || '';
+
+        if (/Not\sFound/.test(message)) {
+          await session.send(`无结果，请使用日文关键词`);
+        } else if (/fetch failed.*https?:\/\/[\w.-]+/.test(message)) {
+          await session.send(`服务器网络波动，请重试`);
+        } else {
+          await session.send(`发生未知错误，请查看日志`);
+        }
+
         ctx.logger.error(error);
-        return
+        return;
       }
     });
 
-  ctx.command('jav [number:text]', '通过番号搜索影片')
+  jav
     .subcommand("jew [type:text]", "获取最新影片")
     .action(async ({ session }, type) => {
       let listUrl = config.api
       if (type) {
         if (type === "无码") {
-          if (config.ifPre) listUrl += uncensoredApi;
-          else listUrl += uncensoredApi0;
+          if (config.ifPre) listUrl += api.uncensored_all;
+          else listUrl += api.uncensored;
         } else {
           return '如需关键词搜索请使用指令 “jkw”\n本指令仅支持参数 “无码”';
         }
       } else {
-        if (config.ifPre) listUrl += fetchApi;
-        else listUrl += fetchApi0;
+        if (config.ifPre) listUrl += api.fetch_all;
+        else listUrl += api.fetch;
       }
 
       try {
@@ -449,9 +470,18 @@ export function apply(ctx: Context, config) {
           }
         }
       } catch (error) {
-        await session.send(`获取失败！`);
+        const message = error.message || '';
+
+        if (/Not\sFound/.test(message)) {
+          await session.send(`获取失败，请检查后端运行状态`);
+        } else if (/fetch failed.*https?:\/\/[\w.-]+/.test(message)) {
+          await session.send(`服务器网络波动，请重试`);
+        } else {
+          await session.send(`发生未知错误，请查看日志`);
+        }
+
         ctx.logger.error(error);
-        return
+        return;
       }
     });
 }
