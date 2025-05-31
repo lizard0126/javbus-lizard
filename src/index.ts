@@ -7,7 +7,7 @@ export const usage = `
 # ⚠️ NSFW警告!!!
 ## 用于查询番号返回磁力链接、封面预览、内容预览截图
 
-## API需要自行部署，参考项目 [javbus-api](https://github.com/ovnrain/javbus-api)
+## API需要自行部署，参考项目 [javbus-api](https://github.com/ovnrain/javbus-api)。原项目当前版本部署有问题，需退回至标签2.1.2版本部署
 
 ## 请低调使用，请勿配置于QQ或者其他国内APP平台，带来的后果请自行承担。
 ---
@@ -51,6 +51,7 @@ export const Config = Schema.intersect([
     count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
     ifPre: Schema.boolean().default(false).description('是否展示未发行影片（影响最新影片展示，不影响 jav 指令搜索）'),
     ifForward: Schema.boolean().default(false).description('是否合并转发（已适配 onebot、telegram 平台）'),
+    debug: Schema.boolean().default(false).description('是否启用日志调试信息输出'),
   }).description('基础设置'),
   Schema.object({
     cover: Schema.boolean().default(false).description('是否返回封面'),
@@ -72,7 +73,6 @@ export const Config = Schema.intersect([
         Schema.const(-1).description('获取全部磁链'),
         Schema.number().min(1).default(5).description('限制最多获取的磁链数量'),
       ])
-        .default(3)
         .description('返回的磁链数量'),
     }),
     Schema.object({}),
@@ -167,7 +167,8 @@ export function apply(ctx: Context, config) {
         await session.send(forwardMessage);
         await session.bot.deleteMessage(session.channelId, tipMessageId);
       } catch (error) {
-        await session.send(`合并转发消息发送失败: ${error}`);
+        await session.send(`合并转发消息发送失败`);
+        ctx.logger.error(error);
         await session.bot.deleteMessage(session.channelId, tipMessageId);
       }
 
@@ -206,7 +207,8 @@ export function apply(ctx: Context, config) {
           await bot.deleteMessage(session.channelId, tipMessageId);
         }
       } catch (error) {
-        ctx.logger.error('消息发送失败:', error);
+        await session.send(`合并转发消息发送失败`);
+        ctx.logger.error(error);
       }
 
     } else {
@@ -218,6 +220,7 @@ export function apply(ctx: Context, config) {
   //搜索影片详情
   async function fetchMovie(number: string): Promise<MovieDetail> {
     const movieUrl = config.api + movieApi + number;
+    if (config.debug) ctx.logger.info('[影片搜索 URL]', movieUrl);
 
     let result: MovieDetail = {
       magnet: "",
@@ -235,8 +238,9 @@ export function apply(ctx: Context, config) {
 
     if (config.magnet) {
       const magnetUrl = config.api + magnetApi + `${id}?gid=${gid}&uc=${uc}`;
+      if (config.debug) ctx.logger.info('[磁链请求 URL]', magnetUrl);
       let magnetList = await ctx.http.get(magnetUrl);
-      ctx.logger.info(magnetList)
+
       switch (config.magnetPriority) {
         case 'subtitle':
           magnetList = [
@@ -281,6 +285,7 @@ export function apply(ctx: Context, config) {
           referer: `https://www.javbus.com/${id}`,
         }));
     }
+    if (config.debug) ctx.logger.info('[影片详情]', result);
 
     return result;
   }
@@ -293,6 +298,7 @@ export function apply(ctx: Context, config) {
 
     try {
       const searchData = await ctx.http.get(keywordUrl);
+      if (config.debug) ctx.logger.info('[搜索结果]', searchData);
 
       return searchData.movies.slice(0, config.count)
         .map((movie) => ({
@@ -311,6 +317,7 @@ export function apply(ctx: Context, config) {
   async function newMovie(url: string): Promise<Movies[]> {
     try {
       const searchData = await ctx.http.get(url);
+      if (config.debug) ctx.logger.info('[搜索结果]', searchData);
 
       return searchData.movies.slice(0, config.count)
         .map((movie) => ({
@@ -357,7 +364,9 @@ export function apply(ctx: Context, config) {
           }
         }
       } catch (error) {
-        return `发生错误，请检查番号是否正确！\n${error.message}`;
+        await session.send(`搜索失败，番号错误或影片暂未发行！`);
+        ctx.logger.error(error);
+        return
       }
     });
 
@@ -389,7 +398,9 @@ export function apply(ctx: Context, config) {
           }
         }
       } catch (error) {
-        return `发生错误，请稍后再试。\n${error.message}`;
+        await session.send(`搜索失败，请使用日文关键词！`);
+        ctx.logger.error(error);
+        return
       }
     });
 
@@ -430,7 +441,9 @@ export function apply(ctx: Context, config) {
           }
         }
       } catch (error) {
-        return `发生错误，请稍后再试。\n${error.message}`;
+        await session.send(`获取失败！`);
+        ctx.logger.error(error);
+        return
       }
     });
 }

@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-javbus-lizard",
   "description": "nsfw插件,可获取磁链封面及缩略图，支持关键词搜索，可获取最新影片列表",
-  "version": "4.2.3",
+  "version": "4.2.4",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lizard0126/javbus-lizard.git"
