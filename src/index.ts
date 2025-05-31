@@ -10,6 +10,8 @@ export const usage = `
 ## API需要自行部署，参考项目 [javbus-api](https://github.com/ovnrain/javbus-api)。原项目当前版本部署有问题，需退回至标签2.1.2版本部署
 
 ## 请低调使用，请勿配置于QQ或者其他国内APP平台，带来的后果请自行承担。
+
+## 4.2.4-alpha.1版本为测试版本，用于测试onebot平台嵌套合并转发
 ---
 
 <details>
@@ -162,9 +164,15 @@ export function apply(ctx: Context, config) {
       );
 
       const forwardMessage = h('message', { forward: true, children: forwardMessages });
+      const doubleForward = h('message', {
+        forward: true,
+        children: [
+          h('message', { userId: session.userId, nickname: nickname }, forwardMessage)
+        ]
+      });
 
       try {
-        await session.send(forwardMessage);
+        await session.send(doubleForward);
         await session.bot.deleteMessage(session.channelId, tipMessageId);
       } catch (error) {
         await session.send(`合并转发消息发送失败`);
