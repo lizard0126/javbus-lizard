@@ -377,9 +377,9 @@ export function apply(ctx: Context, config) {
       } catch (error) {
         const message = error.message || '';
 
-        if (/Error:\s+Not\s+Found/.test(message)) {
+        if (/Not\s+Found/i.test(message)) {
           await session.send(`番号错误或影片暂未发行`);
-        } else if (/Error:\s+fetch\s+https?:\/\/[\w.-]+\/?.*failed/.test(message)) {
+        } else if (/(fetch\s+(https?:\/\/[\w.-]+\/?.*\s+)?failed|fetch\s+failed)/i.test(message)) {
           await session.send(`服务器网络波动，请重试`);
         } else {
           await session.send(`发生未知错误，请查看日志`);
@@ -420,9 +420,9 @@ export function apply(ctx: Context, config) {
       } catch (error) {
         const message = error.message || '';
 
-        if (/Error:\s+Not\s+Found/.test(message)) {
+        if (/Not\s+Found/i.test(message)) {
           await session.send(`无结果，请使用日文关键词`);
-        } else if (/Error:\s+fetch\s+https?:\/\/[\w.-]+\/?.*failed/.test(message)) {
+        } else if (/(fetch\s+(https?:\/\/[\w.-]+\/?.*\s+)?failed|fetch\s+failed)/i.test(message)) {
           await session.send(`服务器网络波动，请重试`);
         } else {
           await session.send(`发生未知错误，请查看日志`);
@@ -472,9 +472,9 @@ export function apply(ctx: Context, config) {
       } catch (error) {
         const message = error.message || '';
 
-        if (/Error:\s+Not\s+Found/.test(message)) {
+        if (/Not\s+Found/i.test(message)) {
           await session.send(`获取失败，请检查后端运行状态`);
-        } else if (/Error:\s+fetch\s+https?:\/\/[\w.-]+\/?.*failed/.test(message)) {
+        } else if (/(fetch\s+(https?:\/\/[\w.-]+\/?.*\s+)?failed|fetch\s+failed)/i.test(message)) {
           await session.send(`服务器网络波动，请重试`);
         } else {
           await session.send(`发生未知错误，请查看日志`);
