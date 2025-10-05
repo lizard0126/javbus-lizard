@@ -1,5 +1,4 @@
 import { Context, h, Schema } from 'koishi';
-import FormData from 'form-data';
 
 export const name = 'javbus-lizard';
 
@@ -51,7 +50,7 @@ export const Config = Schema.intersect([
     api: Schema.string().default('').required().description('api形如 https://aaa.bbb.ccc'),
     count: Schema.number().default(5).min(1).max(30).description('每次搜索最多获取的影片数量'),
     ifPre: Schema.boolean().default(false).description('是否展示未发行影片（影响最新影片展示，不影响 jav 指令搜索）'),
-    ifForward: Schema.boolean().default(false).description('是否合并转发（已适配 onebot、telegram 平台）'),
+    ifForward: Schema.boolean().default(false).description('是否合并转发（仅适配onebot平台，其他平台请勿开启）'),
     debug: Schema.boolean().default(false).description('是否启用日志调试信息输出'),
   }).description('基础设置'),
   Schema.object({
@@ -64,7 +63,7 @@ export const Config = Schema.intersect([
       magnet: Schema.const(true),
       magnetPriority: Schema.union([
         Schema.const('default').description('默认顺序'),
-        Schema.const('subtitle').description('中文字幕优先'),
+        Schema.const('cn').description('中文字幕优先'),
         Schema.const('size-asc').description('磁链从小到大'),
         Schema.const('size-desc').description('磁链从大到小'),
       ])
@@ -112,112 +111,52 @@ export function apply(ctx: Context, config) {
   }
 
   //请求图片
-  async function fetchImage(url: string, referer: string): Promise<string> {
-    const imageBuffer = await ctx.http.get(url, {
-      headers: { referer },
-      responseType: 'arraybuffer'
-    });
-
-    return `data:image/jpeg;base64,${Buffer.from(imageBuffer).toString('base64')}`;
-  }
-
-  //请求图片buffer
-  async function fetchImageBuffer(url: string, referer: string): Promise<Buffer> {
-    const arrayBuffer = await ctx.http.get<ArrayBuffer>(url, {
-      headers: { referer },
-      responseType: 'arraybuffer',
-    });
-
-    return Buffer.from(arrayBuffer);
-  }
-
-  //上传图片到skyimg.de图床
-  async function uploadImage(ctx, buffer) {
-    const form = new FormData()
-    form.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' })
-    const response = await ctx.http.post('https://skyimg.de/api/upload', form.getBuffer(),
-      { headers: form.getHeaders() })
-
-    return response
+  async function fetchImage(url, referer) {
+    try {
+      const imageBuffer = await ctx.http.get(url, { headers: { referer }, responseType: 'arraybuffer' });
+      return `data:image/jpeg;base64,${Buffer.from(imageBuffer).toString('base64')}`;
+    } catch (error) {
+      ctx.logger.error('图片获取失败：', url);
+      return null;
+    }
   }
 
   //合并转发
   async function forward(session, messages) {
     const bot = await session.bot;
     const platform = bot.platform;
-    const messageCount = messages.length;
-    const [tipMessageId] = await session.send(`共 ${messageCount} 条消息合并转发中...`);
+    const [tipMessageId] = await session.send(`共 ${messages.length} 条消息合并转发中...`);
 
     if (platform === 'onebot') {
-      const UserInfo = await bot.getUser(session.userId);
-      const nickname: string = UserInfo.username;
-      const forwardMessages = await Promise.all(
-        messages.map(async (msg) => {
-          const attrs = { userId: session.userId, nickname: nickname };
-
-          const imageData = await fetchImage(msg.src, msg.referer);
-          if (msg.text) {
-            return h('message', attrs, `${msg.text}\n`, h.image(imageData));
-          } else {
-            return h('message', attrs, h.image(imageData));
-          }
-        })
-      );
-
-      const forwardMessage = h('message', { forward: true, children: forwardMessages });
-      const doubleForward = h('message', {
-        forward: true,
-        children: [
-          h('message', { userId: session.userId, nickname: nickname }, forwardMessage)
-        ]
-      });
-
       try {
-        await session.send(doubleForward);
+        const UserInfo = await bot.getUser(session.userId);
+        const nickname: string = UserInfo.username;
+
+        const forwardMessages = await Promise.all(
+          messages.map(async (msg) => {
+            const attrs = { userId: session.userId, nickname: nickname };
+
+            const imageData = await fetchImage(msg.src, msg.referer);
+            if (msg.text) {
+              return h('message', attrs, `${msg.text}\n`, h.image(imageData));
+            } else {
+              return h('message', attrs, h.image(imageData));
+            }
+          })
+        );
+
+        const forwardMessage = h('message', {
+          forward: true,
+          children: forwardMessages
+        });
+
+        await session.send(forwardMessage);
         await session.bot.deleteMessage(session.channelId, tipMessageId);
+
       } catch (error) {
         await session.send(`合并转发消息发送失败`);
         ctx.logger.error(error);
         await session.bot.deleteMessage(session.channelId, tipMessageId);
-      }
-
-    } else if (platform === 'telegram') {
-      const group = await Promise.all(
-        messages.map(async (msg) => {
-          const imageBuffer = await fetchImageBuffer(msg.src, msg.referer)
-          const result = await uploadImage(ctx, imageBuffer);
-          const imgUrl = result[0].url
-
-          return {
-            type: 'photo',
-            media: imgUrl,
-            caption: (msg.text || '').slice(0, 1024),
-          }
-        })
-      );
-
-      let groupCount = 1;
-      if (group.length > 10 && group.length <= 20) {
-        groupCount = 2;
-      } else if (group.length > 20 && group.length <= 30) {
-        groupCount = 3;
-      }
-      const groups: typeof group[] = Array.from({ length: groupCount }, () => []);
-      group.forEach((item, index) => {
-        groups[index % groupCount].push(item);
-      });
-
-      try {
-        for (const g of groups) {
-          await bot.internal.sendMediaGroup({
-            chat_id: session.channelId,
-            media: g,
-          });
-          await bot.deleteMessage(session.channelId, tipMessageId);
-        }
-      } catch (error) {
-        await session.send(`合并转发消息发送失败`);
-        ctx.logger.error(error);
       }
 
     } else {
@@ -227,7 +166,7 @@ export function apply(ctx: Context, config) {
   }
 
   //搜索影片详情
-  async function fetchMovie(number: string): Promise<MovieDetail> {
+  async function fetchMovie(number) {
     const movieUrl = config.api + api.movie + number;
     if (config.debug) ctx.logger.info('[影片搜索 URL]', movieUrl);
 
@@ -250,23 +189,16 @@ export function apply(ctx: Context, config) {
       if (config.debug) ctx.logger.info('[磁链请求 URL]', magnetUrl);
       let magnetList = await ctx.http.get(magnetUrl);
 
-      switch (config.magnetPriority) {
-        case 'subtitle':
-          magnetList = [
-            ...magnetList.filter(m => m.hasSubtitle),
-            ...magnetList.filter(m => !m.hasSubtitle),
-          ];
-          break;
-        case 'size-asc':
-          magnetList = magnetList.sort((a, b) =>
-            a.numberSize - b.numberSize
-          );
-          break;
-        case 'size-desc':
-          magnetList = magnetList.sort((a, b) =>
-            b.numberSize - a.numberSize
-          );
-          break;
+      magnetList.forEach(item => {
+        item.cn = /(?:ch|C)/i.test(item.title);
+      });
+
+      if (config.magnetPriority === 'cn') {
+        magnetList.sort((a, b) => Number(b.cn) - Number(a.cn));
+      } else if (config.magnetPriority === 'size-asc') {
+        magnetList.sort((a, b) => a.numberSize - b.numberSize);
+      } else if (config.magnetPriority === 'size-desc') {
+        magnetList.sort((a, b) => b.numberSize - a.numberSize);
       }
 
       let limit;
@@ -299,31 +231,8 @@ export function apply(ctx: Context, config) {
     return result;
   }
 
-  //关键词搜索影片
-  async function fetchKeyword(keyword: string): Promise<Movies[]> {
-    let keywordUrl;
-    if (config.ifPre) keywordUrl = config.api + api.search_all + encodeURIComponent(keyword);
-    else keywordUrl = config.api + api.search + encodeURIComponent(keyword);
-
-    try {
-      const searchData = await ctx.http.get(keywordUrl);
-      if (config.debug) ctx.logger.info('[搜索结果]', searchData);
-
-      return searchData.movies.slice(0, config.count)
-        .map((movie) => ({
-          id: movie.id,
-          title: movie.title,
-          img: movie.img,
-          date: movie.date,
-          tags: movie.tags,
-        }));
-    } catch (error) {
-      return [];
-    }
-  }
-
   //获取最新影片
-  async function newMovie(url: string): Promise<Movies[]> {
+  async function newMovie(url) {
     try {
       const searchData = await ctx.http.get(url);
       if (config.debug) ctx.logger.info('[搜索结果]', searchData);
@@ -337,7 +246,46 @@ export function apply(ctx: Context, config) {
           tags: movie.tags,
         }));
     } catch (error) {
+      ctx.logger.error(error);
       return [];
+    }
+  }
+
+  //发送影片列表
+  async function sendMovieList(session, movies) {
+    try {
+      const messages = movies.map(movie => ({
+        text: [
+          `标题：${movie.title}`,
+          `发行日期：${movie.date}`,
+          `标签：${movie.tags.join(", ")}`,
+          ``,
+          `番号：${movie.id}`
+        ].join('\n'),
+        src: movie.img,
+        referer: `https://www.javbus.com/${movie.id}`,
+      }));
+
+      if (config.ifForward) {
+        await forward(session, messages);
+      } else {
+        for (const msg of messages) {
+          await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
+        }
+      }
+    } catch (error) {
+      const message = error.message || '';
+
+      if (/Not\s+Found/i.test(message)) {
+        await session.send(`无结果`);
+      } else if (/(fetch\s+(https?:\/\/[\w.-]+\/?.*\s+)?failed|fetch\s+failed)/i.test(message)) {
+        await session.send(`服务器网络波动，请重试`);
+      } else {
+        await session.send(`发生未知错误，请查看日志`);
+      }
+
+      ctx.logger.error(error);
+      return;
     }
   }
 
@@ -397,40 +345,17 @@ export function apply(ctx: Context, config) {
         return "请提供搜索关键词！";
       }
 
-      try {
-        const movies = await fetchKeyword(keyword);
+      let keywordUrl;
+      if (config.ifPre) keywordUrl = config.api + api.search_all + encodeURIComponent(keyword);
+      else keywordUrl = config.api + api.search + encodeURIComponent(keyword);
 
-        if (!movies.length) {
-          return "未找到相关影片。";
-        }
+      const movies = await newMovie(keywordUrl)
 
-        const messages = movies.map(movie => ({
-          text: `标题：${movie.title}\n发行日期：${movie.date}\n标签：${movie.tags.join(", ")}\n\n番号：${movie.id}`,
-          src: movie.img,
-          referer: `https://www.javbus.com/${movie.id}`,
-        }));
-
-        if (config.ifForward) {
-          await forward(session, messages);
-        } else {
-          for (const msg of messages) {
-            await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
-          }
-        }
-      } catch (error) {
-        const message = error.message || '';
-
-        if (/Not\s+Found/i.test(message)) {
-          await session.send(`无结果，请使用日文关键词`);
-        } else if (/(fetch\s+(https?:\/\/[\w.-]+\/?.*\s+)?failed|fetch\s+failed)/i.test(message)) {
-          await session.send(`服务器网络波动，请重试`);
-        } else {
-          await session.send(`发生未知错误，请查看日志`);
-        }
-
-        ctx.logger.error(error);
-        return;
+      if (!movies.length) {
+        return "未找到相关影片。";
       }
+
+      await sendMovieList(session, movies)
     });
 
   jav
@@ -449,39 +374,12 @@ export function apply(ctx: Context, config) {
         else listUrl += api.fetch;
       }
 
-      try {
-        const movies = await newMovie(listUrl);
+      const movies = await newMovie(listUrl);
 
-        if (!movies.length) {
-          return "未找到相关影片。";
-        }
-
-        const messages = movies.map(movie => ({
-          text: `标题：${movie.title}\n发行日期：${movie.date}\n标签：${movie.tags.join(", ")}\n\n番号：${movie.id}`,
-          src: movie.img,
-          referer: `https://www.javbus.com/${movie.id}`,
-        }));
-
-        if (config.ifForward) {
-          await forward(session, messages);
-        } else {
-          for (const msg of messages) {
-            await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
-          }
-        }
-      } catch (error) {
-        const message = error.message || '';
-
-        if (/Not\s+Found/i.test(message)) {
-          await session.send(`获取失败，请检查后端运行状态`);
-        } else if (/(fetch\s+(https?:\/\/[\w.-]+\/?.*\s+)?failed|fetch\s+failed)/i.test(message)) {
-          await session.send(`服务器网络波动，请重试`);
-        } else {
-          await session.send(`发生未知错误，请查看日志`);
-        }
-
-        ctx.logger.error(error);
-        return;
+      if (!movies.length) {
+        return "未找到相关影片。";
       }
+
+      await sendMovieList(session, movies)
     });
 }

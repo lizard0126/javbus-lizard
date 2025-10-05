@@ -45,6 +45,8 @@
 <details>
 <summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">更新日志</span></strong></summary>
 
+### 4.3.0
+- 精简代码，去除无效功能，优化响应
 ### 4.2.6
 - 优化错误信息的返回，优化代码结构
 ### 4.2.4
