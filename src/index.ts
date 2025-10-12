@@ -95,19 +95,13 @@ export function apply(ctx: Context, config) {
     gid?: number;
     uc?: string;
     magnet: string;
+    id: string;
     title: string;
     img: string;
     date: string;
     videoLength: string;
     stars: Array<{ name: string }>;
     samples: Array<{ src: string; referer: string; }>;
-  }
-  interface Movies {
-    id: string;
-    title: string;
-    img: string;
-    date: string;
-    tags: Array<{ name: string }>;
   }
 
   //请求图片
@@ -160,8 +154,15 @@ export function apply(ctx: Context, config) {
       }
 
     } else {
-      await session.send(`当前平台（${platform}）暂不支持合并转发功能。`);
+      await session.send(`当前平台（${platform}）暂不支持合并转发功能，将顺序发送`);
       await bot.deleteMessage(session.channelId, tipMessageId);
+      for (const msg of messages) {
+        if (msg.text) {
+          await session.send(msg.text + h.image(await fetchImage(msg.src, msg.referer)));
+        } else {
+          await session.send(h.image(await fetchImage(msg.src, msg.referer)));
+        }
+      }
     }
   }
 
@@ -172,6 +173,7 @@ export function apply(ctx: Context, config) {
 
     let result: MovieDetail = {
       magnet: "",
+      id: "",
       title: "",
       img: "",
       date: "",
@@ -311,14 +313,15 @@ export function apply(ctx: Context, config) {
         }
 
         if (config.preview && movie.samples.length > 0) {
+          const messages = movie.samples.map(sample => ({
+            src: sample.src,
+            referer: `https://www.javbus.com/${movie.id}`,
+          }));
           if (config.ifForward) {
-            const messages = movie.samples.map(sample => ({
-              src: sample.src
-            }));
             await forward(session, messages);
           } else {
-            for (const sample of movie.samples) {
-              await session.send(h.image(await fetchImage(sample.src, sample.referer)));
+            for (const msg of messages) {
+              await session.send(h.image(await fetchImage(msg.src, msg.referer)));
             }
           }
         }

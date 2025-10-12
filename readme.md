@@ -45,6 +45,8 @@
 <details>
 <summary><strong><span style="font-size: 1.3em; color: #2a2a2a;">更新日志</span></strong></summary>
 
+### 4.3.1
+- 不适配合并转发的平台直接顺序发送
 ### 4.3.0
 - 精简代码，去除无效功能，优化响应
 ### 4.2.6
